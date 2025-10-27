@@ -8,6 +8,17 @@
 __jedlex_register(type, ((const char*[]){__VA_ARGS__}), (sizeof((const char*[]){__VA_ARGS__})/sizeof(const char*)))
 
 //*********** 
+typedef int TokenType;
+
+typedef enum JedDefaultTokenTypes{
+    TTYPE_EOF,
+    TTYPE_PUNCTUATION,
+    TTYPE_SYMBOL,
+    TTYPE_IDENTIFIER,
+    TTYPE_KEYWORD,
+    TTYPE_COUNT
+} JedDefaultTokenTypes;
+
 // TODO make private with opaque/void pointers and such
 typedef struct JedToken{
     char* value;
@@ -23,15 +34,15 @@ typedef struct Jedlexer {
 //*********** */
 
 Jedlexer jedlex_init(const char* in_buffer);
-void __jedlex_register(void* type, const char* values[], unsigned long amount);
+void __jedlex_register(TokenType type, const char* values[], unsigned long amount);
 
 void jedlex_read_next_token();
 void jedlex_peek_next_token();
 void __jedlex_getchar();
 
 
-#ifdef JEDLEX_IMPLEMENTATION
-void __jedlex_register(void* type, const char* values[], unsigned long amount){
+// #ifdef JEDLEX_IMPLEMENTATION
+void __jedlex_register(TokenType type, const char* values[], unsigned long amount){
     for (int i =0; i<amount; i++) {
         printf("%s\n", values[i]);
     }
@@ -48,5 +59,5 @@ void jedlex_peek_next_token(){
 void __jedlex_getchar(){
     TODO("Implement function: __jedlex_getchar");
 };
-#endif
+// #endif
 #endif

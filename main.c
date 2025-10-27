@@ -5,6 +5,6 @@
 #include "jedlex.h"
 int main(){
     jedlex_init(NULL);
-    JEDLEX_REGISTER(0, "if", "else", "then");
+    JEDLEX_REGISTER(TTYPE_KEYWORD, "if", "else", "then");
     return 0;
 }
