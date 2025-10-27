@@ -1,2 +1,2 @@
-# jedlex
+# Jedlex
 basic lexing lib 
