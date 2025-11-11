@@ -5,6 +5,13 @@
 #include "jedlex.h"
 int main(){
     jedlex_init(NULL);
-    JEDLEX_REGISTER(TTYPE_KEYWORD, "if", "else", "then");
+    char* arr[5];
+    JEDLEX_REGISTER_VALUES(TTYPE_KEYWORD, "if", "else", "then");
+    JEDLEX_REGISTER_VALUES(TTYPE_KEYWORD, "top");
+    JEDLEX_REGISTER_VALUES(TTYPE_IDENTIFIER, "hello", "world");
+    // JEDLEX_CLS_REGISTER(&arr);
+
+    // add_rule(Matcher, Event, Restriction, priority)
+
     return 0;
 }
