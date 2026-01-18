@@ -14,8 +14,41 @@ __jedlex_register_values(type, ((const char*[]){__VA_ARGS__}), (sizeof((const ch
 #define JEDLEX_CLS_CLASSIFY(type, string, length) TODO("Implement default lookup classifier")
 #define JEDLEX_CLS_FREE  (type, string, length) TODO("Implement default free classifier")
 
+#define MAX_STATES 1024
+
 //*********** 
-typedef int TokenType;
+
+// DFA
+typedef unsigned int JedStateID;
+typedef struct {
+    char key;
+    // int priority; ?
+    // restrictions; ?
+    JedStateID target;
+} JedTransition;
+
+typedef struct {
+    unsigned int count;
+    JedStateID fallback;
+    const char* name;
+} JedState;
+
+JedState states[1024];
+
+
+
+
+
+
+
+
+
+
+
+
+
+// lexer / tokens structs
+typedef int JedTokenType;
 
 typedef enum JedDefaultTokenTypes{
     TTYPE_EOF,
@@ -26,7 +59,7 @@ typedef enum JedDefaultTokenTypes{
     TTYPE_COUNT
 } JedDefaultTokenTypes;
 
-// TODO make private with opaque/void pointers and such
+
 typedef struct JedToken{
     char* value;
     void* type;
@@ -52,7 +85,7 @@ void __jedlex_getchar();
 
 
 // #ifdef JEDLEX_IMPLEMENTATION
-void __jedlex_register_values(TokenType type, const char* values[], unsigned long amount){
+void __jedlex_register_values(JedTokenType type, const char* values[], unsigned long amount){
     for (int i =0; i<amount; i++) {
         printf("%s\n", values[i]);
     }
