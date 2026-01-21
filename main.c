@@ -1,4 +1,5 @@
 
+#include "jedlex.h"
 #include "stdlib.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -77,14 +78,19 @@ void add_transit_range(State* s, char lower, char higher, u32 to_state){
 
 
 int main(){
-    State *s1 = make_state();
-    State *s2 = make_state();
-    s1->name = "Start";
-    s2->name = "End";
+    char* input = "aaabbbccc"; // mimic a fdopen + fread into char buffer
+    JedlexCtx ctx = {0}; // user handle all memory allocs
+    
+    jedlex_init(&ctx, input, FLG_USE_DEFAULTS | FLG_FSM_DISABLED);
 
-    add_transit_range(s1, 'a', 'z', s2->ID);
+    // State *s1 = make_state();
+    // State *s2 = make_state();
+    // s1->name = "Start";
+    // s2->name = "End";
 
-    debug_state(s1);
-    debug_state(s2);
+    // add_transit_range(s1, 'a', 'z', s2->ID);
+
+    // debug_state(s1);
+    // debug_state(s2);
     return 0;
 }
