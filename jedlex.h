@@ -3,6 +3,7 @@
 //* temp
 #include "stdio.h"
 #include "stdlib.h"
+#include <time.h>
 #define UNUSED(value) (void)(value)
 #define TODO(message) do {  fprintf(stderr, "%s:%d: TODO: %s\n", __FILE__, __LINE__, message); } while(0)
 #define FATAL_TODO(message) do {  fprintf(stderr, "%s:%d: TODO: %s\n", __FILE__, __LINE__, message);exit(0); } while(0)
@@ -25,53 +26,86 @@ typedef unsigned int jedlexInitFlags;
 
 #define MAX_STATES 1024
 
-typedef unsigned long u64;
-typedef unsigned int u32;
+typedef unsigned long long   uint64;
+typedef unsigned int         uint32;
+typedef unsigned char        uint8;
 
-typedef struct JedlexToken{
-    char* value;
-    void* type;
-} JedToken;
+typedef enum EJedCoreMode{
+    COREMODE_SWITCH,
+    COREMODE_JUMP_TABLE,
+    COREMODE_FSM_CLASSIC,
+    COREMODE_FSM_MINIMAL,
+    COREMODE_COUNT
+} EJedCoreMode;
 
-typedef struct JedlexDFSMState{
-    u32 id;
+typedef enum EJedTokenType{
+    TOKTYPE_IDENTIFIER,
+    TOKTYPE_PUNCTUATION,
+    TOKTYPE_WHITESPACE,
+    TOKTYPE_COUNT
+} EJedTokenType;
 
-
-}JedlexDFSMState;
+typedef enum EJedSwitchState{
+    JEDSTATE_START,
+    JEDSTATE_EMIT,
+    JEDSTATE_ERROR,
+    JEDSTATE_IN_IDENT,
+    JEDSTATE_IN_WS,
+    JEDSTATE_COUNT
+} EJedSwitchState;
 
 typedef struct JedlexCtx {
     // Lexer -- zone
-    const char* in_stream;           //let user manage IO, and buffer alloc
-    u64 istream_offset;
+    const uint8* in_buffer;           //let user manage IO, and buffer alloc
+    uint64 istream_offset;
 
-} JedlexCtx ;
+    //switch zone
+    EJedSwitchState current_state;
 
+} JedlexCtx;
 
-void jedlex_init(JedlexCtx* ctx, const char* input, jedlexInitFlags flags);
+typedef struct JedLexToken{} JedLexToken;
+JedLexToken jedlex_get_next_token(JedlexCtx* ctx);
+
+void jedlex_init(JedlexCtx* ctx, const uint8* input, EJedCoreMode core_mode);
 
 // #ifdef JEDLEX_IMPLEMENTATION
 
-inline void jedlex_init(JedlexCtx* ctx, const char* in_buffer, jedlexInitFlags flags){
-    ctx->in_stream = in_buffer;
+inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, EJedCoreMode core_mode){
+    ctx->in_buffer = in_buffer;
     ctx->istream_offset = 0;
-    if (flags & FLG_FSM_MINIMAL) {
-        FATAL_TODO("OPTIMIZE STATEMACHINE MEMORY TO MINIMAL");
-    }
-    if(flags & FLG_USE_DEFAULTS){
-        TODO("CHOSE TO USE DEFAULT FSM IF NOT DISABLED OR DEFAULT SWITCH LIKE FUNC");
-        if(flags & FLG_FSM_DISABLED){
-            FATAL_TODO("DEFAULT SWITCH LIKE FUNC!");
-        }else {
-            TODO("DEFAULT FSM !");
-        }
-    }
-    if(flags & FLG_FSM_DISABLED){
-        FATAL_TODO("DISABLE STATMACHINES !");
+    switch (core_mode) {
+        case COREMODE_SWITCH: TODO("switch mode (basic switchs with possible hook ovveride)");break;
+        case COREMODE_JUMP_TABLE: FATAL_TODO("Jump table mode (switch with full states & actions based on a vtable)"); break;
+        case COREMODE_FSM_CLASSIC: FATAL_TODO("FSM classic mode (struct & array)"); break;
+        case COREMODE_FSM_MINIMAL: FATAL_TODO("FSM minimal mode (row compression, 1D array & offsets)"); break;
+        default:FATAL_TODO("Unsuported core mode!");break;
     }
     TODO("complete ctx init with full ctx in the future");
-    TODO("change input buffer stream type to represent an abstract byte stream");
+    TODO("Make core mode compile time switch rather than runtime");
 }
 
+inline JedLexToken jedlex_get_next_token(JedlexCtx *ctx){
+    ctx->current_state = JEDSTATE_START;
+    TODO("finish switch states");
+    while (ctx->in_buffer[ctx->istream_offset] != '\0') {
+        switch (ctx->current_state) {
+            case JEDSTATE_START:{
+                TODO("start state ifs logic");
+                ctx->current_state = JEDSTATE_ERROR;
+                break;
+            }
+            case JEDSTATE_IN_IDENT:{
+                TODO("in identifier ifs logic");
+                ctx->current_state = JEDSTATE_ERROR;
+                break;
+            }
+            case JEDSTATE_ERROR: return (JedLexToken){};
+            default: ctx->current_state = JEDSTATE_ERROR; break;
+        }
+    }
+    return (JedLexToken){};
+}
 
 
 #endif
