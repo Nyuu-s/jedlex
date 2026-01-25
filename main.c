@@ -78,11 +78,11 @@ void add_transit_range(State* s, char lower, char higher, u32 to_state){
 
 
 int main(){
-    uint8* input = "aaabbbccc"; // mimic a fdopen + fread into char buffer
+    uint8* input = (uint8*)"a1234"; // mimic a fdopen + fread into char buffer
     JedlexCtx ctx = {0}; // user handle all memory allocs
     
-    jedlex_init(&ctx, input, COREMODE_SWITCH);
-jedlex_get_next_token(&ctx);
+    jedlex_init(&ctx, input, 10, COREMODE_SWITCH);
+    get_next_token(&ctx);
     // State *s1 = make_state();
     // State *s2 = make_state();
     // s1->name = "Start";
