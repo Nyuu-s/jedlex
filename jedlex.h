@@ -57,8 +57,16 @@ typedef enum EJedSwitchState{
     JEDSTATE_COUNT
 } EJedSwitchState;
 
+/*
+    Token acumulation strategies:
+    Dynamic array
+    span / 2 ptrs start-end
+*/
+typedef struct JedLexToken{
+    uint8* start;
+    uint8* end;
+}  JedLexToken;
 
-typedef struct JedLexToken{}  JedLexToken;
 typedef struct JedlexCtx    JedlexCtx ;
 
 struct JedlexCtx {
@@ -80,6 +88,7 @@ bool is_alphanum(char c);
 bool is_num(char c);
 bool is_alpha(char c);
 void advance_char(JedlexCtx* ctx, uint64 step);
+void add_char_to_token(JedlexCtx* ctx, JedLexToken* tok);
 // #ifdef JEDLEX_IMPLEMENTATION
 
 inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_size, EJedCoreMode core_mode){
@@ -121,6 +130,16 @@ inline JedLexToken get_next_token(JedlexCtx *ctx){
 inline void advance_char(JedlexCtx* ctx, uint64 step){
     ctx->in_buffer_offset += step;
 }
+inline void add_char_to_token(JedlexCtx* ctx, JedLexToken* tok){
+    printf("%llu  <= %llu : %d\n", ctx->inbuffer_size, ctx->in_buffer_offset+1,  ctx->inbuffer_size <= ctx->in_buffer_offset+1);
+    if(ctx->inbuffer_size <= ctx->in_buffer_offset+1)
+        return;
+    ctx->in_buffer_offset += 1;
+    tok->end++;
+
+    printf("ptr:%p\n", tok->end);
+
+}
 
 inline bool is_num(char c){
     return c >= '0' && c <= '9';
@@ -144,42 +163,60 @@ inline uint8 peek_char(JedlexCtx* ctx, uint64 offset){
 inline JedLexToken switch_get_next_token(JedlexCtx *ctx){
 
     TODO("Callback check ON_CHAR");
-    
+    JedLexToken result = {NULL, NULL};
     ctx->current_state = JEDSTATE_START;
+    uint32 state_counters[JEDSTATE_COUNT];
     TODO("finish switch states");
     while (ctx->in_buffer[ctx->in_buffer_offset] != '\0') {
+
         char current_char = peek_char(ctx, 0);
-        printf("cur char = %c\n", current_char);
+        state_counters[ctx->current_state]++;
 
         TODO("Callback check ON_STATE_ENTER");
+        printf("state: %s, char: %c\n", state_name(ctx->current_state), current_char);
         switch (ctx->current_state) {
             case JEDSTATE_START:{
+                for (int i =0; i<JEDSTATE_COUNT; ++i) {
+                    state_counters[i] = 0;
+                }
+                result.start    =   (uint8*) ctx->in_buffer + ctx->in_buffer_offset;
+                result.end      =   (uint8*) ctx->in_buffer + ctx->in_buffer_offset;
+                
+                printf("%p %p\n", result.start, result.end);
                 if(is_num(current_char)) ctx->current_state = JEDSTATE_NUMBER;
-                else if(is_alpha(current_char)) ctx->current_state = JEDSTATE_IDENTIFIER;
+                else if(is_alpha(current_char) || current_char == '_') ctx->current_state = JEDSTATE_IDENTIFIER;
                 else ctx->current_state = JEDSTATE_ERROR;
  
-                printf("state: %s\n", state_name(ctx->current_state));
                 break;
             }
             case JEDSTATE_IDENTIFIER:{
-                // TODO("in identifier ifs logic");
-                printf("state: %s, char: %c\n", state_name(ctx->current_state), current_char);
-                advance_char(ctx, 1);
+                if(is_alpha(current_char) || is_num(current_char) ||current_char == '_'){
+                    add_char_to_token(ctx, &result);
+                }
+                else return result;
                 break;
             }
             case JEDSTATE_NUMBER:{
-                printf("state: %s, char: %c\n", state_name(ctx->current_state), current_char);
-                if(is_num(current_char)) advance_char(ctx, 1);
-                // is in hex form 0x/0X
-                else if(current_char == 'x' || current_char == 'X') advance_char(ctx, 1);
-                else ctx->current_state = JEDSTATE_ERROR;
+                if(current_char == '0'){
+                    add_char_to_token(ctx, &result);
+                    uint8 next = peek_char(ctx, 0);
+                    if (next == 'x' || next == 'X') {
+                        add_char_to_token(ctx, &result);
+                    }
+                }
+                else if(is_num(current_char)) {
+                    add_char_to_token(ctx, &result);
+                    printf("ptr:%p\n", result.end);
+                }
+                else return result;
                 break;
             }
-            case JEDSTATE_ERROR: return (JedLexToken){};
+            case JEDSTATE_ERROR: return result;
             default: ctx->current_state = JEDSTATE_ERROR; break;
         }
     }
-    return (JedLexToken){};
+    return result;
+
 }
 
 
