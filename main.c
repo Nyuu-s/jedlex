@@ -78,7 +78,7 @@ void add_transit_range(State* s, char lower, char higher, u32 to_state){
 
 
 int main(){
-    uint8* input = (uint8*)"hello == _world (55)"; // mimic a fdopen + fread into char buffer
+    uint8* input = (uint8*)"hello == _world 88 (0xFF)"; // mimic a fdopen + fread into char buffer
 
     JedlexCtx ctx = {0}; // user handle all memory allocs
     JedLexToken token = {0};
@@ -86,7 +86,7 @@ int main(){
     
     
     while (get_next_token(&ctx, &token)) {    
-        printf("Token: %.*s\n", (int)(token.end - token.start), token.start);
+        printf("Token: %.*s | %s \n", (int)(token.end - token.start), token.start, token_kind_name(token.kind));
     }
 
     printf("Last Token: %.*s\n", (int)(token.end - token.start), token.start);

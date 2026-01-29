@@ -39,22 +39,26 @@ typedef enum EJedCoreMode{
     COREMODE_COUNT
 } EJedCoreMode;
 
-typedef enum EJedTokenType{
-    TOKTYPE_IDENTIFIER,
-    TOKTYPE_PUNCTUATION,
-    TOKTYPE_WHITESPACE,
-    TOKTYPE_COUNT
-} EJedTokenType;
+typedef enum EJedSwitchTokenKind{
+    TOKKIND_IDENTIFIER,
+    TOKKIND_NUMBER,
+    TOKKIND_SYMBOL,
+    TOKKIND_WHITESPACE,
+    TOKKIND_UNKNOWN,
+    TOKKIND_COUNT
+} EJedSwitchTokenKind;
 
 typedef enum EJedSwitchState{
     JEDSTATE_START,
     JEDSTATE_ERROR,
     JEDSTATE_IDENTIFIER,
     JEDSTATE_NUMBER,
+    JEDSTATE_HEX,
     JEDSTATE_SYMBOL,
     JEDSTATE_WS,
     JEDSTATE_COUNT
 } EJedSwitchState;
+
 
 /*
     Token acumulation strategies:
@@ -64,6 +68,7 @@ typedef enum EJedSwitchState{
 typedef struct JedLexToken{
     uint8* start;
     uint8* end;
+    EJedSwitchTokenKind kind;
 }  JedLexToken;
 
 typedef struct JedlexCtx    JedlexCtx ;
@@ -87,6 +92,7 @@ bool switch_get_next_token(JedlexCtx *ctx, JedLexToken* token);
 uint8 peek_char(JedlexCtx* ctx, uint64 offset);
 bool is_alphanum(char c);
 bool is_num(char c);
+bool is_hex(char c);
 bool is_alpha(char c);
 bool is_symbol(char c);
 bool is_whitespace(char c);
@@ -115,15 +121,25 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
 
 const char *state_name(EJedSwitchState s) {
     switch (s) {
-        case JEDSTATE_START:      return "STATE_START";
-        case JEDSTATE_IDENTIFIER: return "STATE_IDENTIFIER";
-        case JEDSTATE_NUMBER:     return "STATE_NUMBER";
-        case JEDSTATE_WS:       return "STATE_WHITESPACE";
-        case JEDSTATE_ERROR:      return "STATE_ERROR";
-        default:               return "?UNKNOWN?";
+        case JEDSTATE_START:        return "STATE_START";
+        case JEDSTATE_IDENTIFIER:   return "STATE_IDENTIFIER";
+        case JEDSTATE_NUMBER:       return "STATE_NUMBER";
+        case JEDSTATE_HEX:          return "STATE_HEXADECIMAL";
+        case JEDSTATE_WS:           return "STATE_WHITESPACE";
+        case JEDSTATE_ERROR:        return "STATE_ERROR";
+        default:                    return "?UNKNOWN?";
     }
 }
-
+const char *token_kind_name(EJedSwitchTokenKind s) {
+    switch (s) {
+        case TOKKIND_IDENTIFIER:        return "IDENTIFIER";
+        case TOKKIND_NUMBER:            return "NUMBER";
+        case TOKKIND_SYMBOL:            return "SYMBOL";
+        case TOKKIND_WHITESPACE:        return "WHITESPACE";
+        case TOKKIND_UNKNOWN:           return "UNKNOWN";
+        default:               return "?ERROR?";
+    }
+}
 // dispatcher
 inline bool get_next_token(JedlexCtx *ctx, JedLexToken* token){
     //dispatch to the get_next_token function depending on ctx init
@@ -144,6 +160,11 @@ inline void add_char_to_token(JedlexCtx* ctx, JedLexToken* tok){
 
 inline bool is_num(char c){
     return c >= '0' && c <= '9';
+}
+inline bool is_hex(char c){
+    return (
+        is_num(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
+    );
 }
 inline bool is_alpha(char c){
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
@@ -201,7 +222,7 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
         char current_char = peek_char(ctx, 0);
         state_counters[ctx->current_state]++;
 
-        // printf("state: %s, char: %c\n", state_name(ctx->current_state), current_char);
+        printf("state: %s, char: %c\n", state_name(ctx->current_state), current_char);
         switch (ctx->current_state) {
             case JEDSTATE_START:{
                 for (int i =0; i<JEDSTATE_COUNT; ++i) {
@@ -217,17 +238,19 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                         uint8 next = peek_char(ctx, 0);
                         if (next == 'x' || next == 'X') {
                             add_char_to_token(ctx, token);
+                            ctx->current_state = JEDSTATE_HEX;
+                            break;
                         }
                     }
                     ctx->current_state = JEDSTATE_NUMBER;
-                
+                    break;
                 }
                 else if(is_alpha(current_char) || current_char == '_') {
                     add_char_to_token(ctx, token); ctx->current_state = JEDSTATE_IDENTIFIER;
                 }
                 else if(is_whitespace(current_char)) {
                     advance_char(ctx, 1);ctx->current_state = JEDSTATE_WS;
-                }
+                }       
                 else if(is_symbol(current_char)) {
                     add_char_to_token(ctx, token);
                     ctx->current_state = JEDSTATE_SYMBOL;
@@ -239,14 +262,20 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 if(is_alpha(current_char) || is_num(current_char) ||current_char == '_'){
                     add_char_to_token(ctx, token);
                 }
-                else return 1;
+                else {
+                    token->kind = TOKKIND_IDENTIFIER;
+                    return 1;
+                }
                 break;
             }
             case JEDSTATE_NUMBER:{
                 if(is_num(current_char)) {
                     add_char_to_token(ctx, token);
                 }
-                else return 1;
+                else{
+                    token->kind = TOKKIND_NUMBER;
+                    return 1;
+                }
                 break;
             }
             case JEDSTATE_WS:{
@@ -264,10 +293,26 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 && current_char != '[' && current_char != ']'  ) {
                     add_char_to_token(ctx, token);
                 }
-                else return 1;
+                else {
+                    token->kind = TOKKIND_SYMBOL;
+                    return 1;
+                }
                 break;
             }
-            case JEDSTATE_ERROR: return 0;
+            case JEDSTATE_HEX: {
+                if(is_hex(current_char)){
+                    add_char_to_token(ctx, token);
+                }
+                else {
+                    token->kind = TOKKIND_NUMBER;
+                    return 1;
+                }
+                break;
+            }
+            case JEDSTATE_ERROR: {
+                token->kind = TOKKIND_UNKNOWN;
+                return 0;
+            }
             default: ctx->current_state = JEDSTATE_ERROR; break;
         }
     }
