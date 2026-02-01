@@ -90,12 +90,12 @@ void jedlex_init(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCor
 bool get_next_token(JedlexCtx* ctx, JedLexToken* token);
 bool switch_get_next_token(JedlexCtx *ctx, JedLexToken* token);
 uint8 peek_char(JedlexCtx* ctx, uint64 offset);
-bool is_alphanum(char c);
-bool is_num(char c);
-bool is_hex(char c);
-bool is_alpha(char c);
-bool is_symbol(char c);
-bool is_whitespace(char c);
+bool is_alphanum(int c);
+bool is_num(int c);
+bool is_hex(int c);
+bool is_alpha(int c);
+bool is_symbol(int c);
+bool is_whitespace(int c);
 void advance_char(JedlexCtx* ctx, uint64 step);
 void add_char_to_token(JedlexCtx* ctx, JedLexToken* tok);
 // #ifdef JEDLEX_IMPLEMENTATION
@@ -158,25 +158,25 @@ inline void add_char_to_token(JedlexCtx* ctx, JedLexToken* tok){
 
 }
 
-inline bool is_num(char c){
+inline bool is_num(int c){
     return c >= '0' && c <= '9';
 }
-inline bool is_hex(char c){
+inline bool is_hex(int c){
     return (
         is_num(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
     );
 }
-inline bool is_alpha(char c){
+inline bool is_alpha(int c){
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
-inline bool isalphanum(char c){
+inline bool isalphanum(int c){
     return is_alpha(c) || is_num(c);
 }
-inline bool is_whitespace(char c){
+inline bool is_whitespace(int c){
     return c == ' ' || c == '\t' || c == '\n';
 }
 
-inline bool is_symbol(char c){
+inline bool is_symbol(int c){
     //TODO use a table
     return (
          c == '?' ||
@@ -219,7 +219,7 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
     uint32 state_counters[JEDSTATE_COUNT];
     while (ctx->in_buffer[ctx->in_buffer_offset] != '\0') {
 
-        char current_char = peek_char(ctx, 0);
+        uint8 current_char = peek_char(ctx, 0);
         state_counters[ctx->current_state]++;
 
         printf("state: %s, char: %c\n", state_name(ctx->current_state), current_char);
