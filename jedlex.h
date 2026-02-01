@@ -89,6 +89,7 @@ struct JedlexCtx {
 void jedlex_init(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCoreMode core_mode);
 bool get_next_token(JedlexCtx* ctx, JedLexToken* token);
 bool switch_get_next_token(JedlexCtx *ctx, JedLexToken* token);
+bool jmptab_get_next_token(JedlexCtx *ctx, JedLexToken* token);
 uint8 peek_char(JedlexCtx* ctx, uint64 offset);
 bool is_alphanum(int c);
 bool is_num(int c);
@@ -109,7 +110,11 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
             ctx->func_next_token = switch_get_next_token;
             break;
         }
-        case COREMODE_JUMP_TABLE: FATAL_TODO("Jump table mode (switch with full states & actions based on a vtable)"); break;
+        case COREMODE_JUMP_TABLE: {
+            TODO("Jump table mode (switch with full states & actions based on a vtable)");
+            ctx->func_next_token = jmptab_get_next_token;
+            break;
+        }
         case COREMODE_FSM_CLASSIC: FATAL_TODO("FSM classic mode (struct & array)"); break;
         case COREMODE_FSM_MINIMAL: FATAL_TODO("FSM minimal mode (row compression, 1D array & offsets)"); break;
         default:FATAL_TODO("Unsuported core mode!");break;
@@ -209,7 +214,6 @@ inline uint8 peek_char(JedlexCtx* ctx, uint64 offset){
 
 
 inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
-
     token->end = 0;
     token->start = 0;
     ctx->current_state = JEDSTATE_START;
@@ -314,7 +318,13 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
         }
     }
     return 0;
+}
 
+inline bool jmptab_get_next_token(JedlexCtx *ctx, JedLexToken *token){
+
+
+
+    return 0;
 }
 
 
