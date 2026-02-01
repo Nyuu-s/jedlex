@@ -106,7 +106,6 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
     ctx->inbuffer_size = buffer_size;
     switch (core_mode) {
         case COREMODE_SWITCH:{
-            TODO("switch mode (basic switchs with possible hook ovveride)");
             ctx->func_next_token = switch_get_next_token;
             break;
         }
@@ -177,7 +176,6 @@ inline bool is_whitespace(int c){
 }
 
 inline bool is_symbol(int c){
-    //TODO use a table
     return (
          c == '?' ||
          c == ',' ||
@@ -212,7 +210,6 @@ inline uint8 peek_char(JedlexCtx* ctx, uint64 offset){
 
 inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 
-    TODO("Callback check ON_CHAR");
     token->end = 0;
     token->start = 0;
     ctx->current_state = JEDSTATE_START;
