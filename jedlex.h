@@ -71,7 +71,8 @@ typedef struct JedLexToken{
     EJedSwitchTokenKind kind;
 }  JedLexToken;
 
-typedef struct JedlexCtx    JedlexCtx ;
+typedef struct JedlexCtx  JedlexCtx;
+typedef void(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 
 struct JedlexCtx {
     // Lexer -- zone
@@ -83,8 +84,18 @@ struct JedlexCtx {
     bool (*func_next_token)(JedlexCtx* ctx, JedLexToken* token);
     //switch zone
     EJedSwitchState current_state;
+    //handlers zone
+    bool is_config_successfull;
+    jedlexHandler* state_handlers_table;
+    uint64 state_handlers_count;
+    
     
 };
+
+
+void jedlex_config_start(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCoreMode core_mode);
+void jedlex_config_states_handlers(JedlexCtx* ctx,jedlexHandler* handlers, uint32 size);
+void jedlex_config_end(JedlexCtx* ctx);
 
 void jedlex_init(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCoreMode core_mode);
 bool get_next_token(JedlexCtx* ctx, JedLexToken* token);
@@ -101,6 +112,9 @@ void advance_char(JedlexCtx* ctx, uint64 step);
 void add_char_to_token(JedlexCtx* ctx, JedLexToken* tok);
 // #ifdef JEDLEX_IMPLEMENTATION
 
+// #############################
+// #		COREMODE: SWITCH
+// #############################
 inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_size, EJedCoreMode core_mode){
     ctx->in_buffer = in_buffer;
     ctx->in_buffer_offset = 0;
@@ -320,7 +334,34 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
     return 0;
 }
 
+// #############################
+// #		COREMODE HANDLERS
+// #############################
+typedef void(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+
+inline void jedlex_config_start(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_size, EJedCoreMode core_mode){
+    ctx->is_config_successfull = 1;
+    jedlex_init(ctx, in_buffer, buffer_size, core_mode);
+    TODO("jedlex_config_start: maybe remove jedlex_init entirely ?");
+}
+
+inline void jedlex_config_states_handlers(JedlexCtx* ctx,jedlexHandler* handlers, uint32 size){
+    if(handlers == NULL || size <= 0){
+        printf("ERROR: Please provide an array of handlers for each states\n");
+        ctx->is_config_successfull = 0;
+        return;
+    }
+    ctx->state_handlers_table = handlers;
+    ctx->state_handlers_count = size;
+}
+
+inline void jedlex_config_end(JedlexCtx* ctx){
+    if(!ctx->is_config_successfull){
+        FATAL_TODO("PLEASE FIX LIB CONFIGURATION");
+    }
+}
 inline bool jmptab_get_next_token(JedlexCtx *ctx, JedLexToken *token){
+
 
 
 
