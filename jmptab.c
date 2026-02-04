@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <string.h>
 
-void mystart(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
-    return;
+bool mystart(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    return 1;
 }
 
 
@@ -17,9 +17,7 @@ int main(){
     
     // jedlexHandler* handlers = (jedlexHandler*) malloc(sizeof(jedlexHandler) * JEDSTATE_COUNT);
     // index = state, value = function to handle state
-    jedlexHandler handlers[] = {
-        mystart
-    };
+    jedlexHandler handlers[JEDSTATE_COUNT];
 
     
     TODO("Setup all handlers");

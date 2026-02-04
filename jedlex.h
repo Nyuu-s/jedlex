@@ -26,6 +26,7 @@ typedef unsigned int jedlexInitFlags;
 
 #define MAX_STATES 1024
 
+
 typedef unsigned long long   uint64;
 typedef unsigned int         uint32;
 typedef unsigned char        uint8;
@@ -72,7 +73,7 @@ typedef struct JedLexToken{
 }  JedLexToken;
 
 typedef struct JedlexCtx  JedlexCtx;
-typedef void(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+typedef bool(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 
 struct JedlexCtx {
     // Lexer -- zone
@@ -127,6 +128,7 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
         case COREMODE_JUMP_TABLE: {
             TODO("Jump table mode (switch with full states & actions based on a vtable)");
             ctx->func_next_token = jmptab_get_next_token;
+            ctx->is_config_successfull = 0;
             break;
         }
         case COREMODE_FSM_CLASSIC: FATAL_TODO("FSM classic mode (struct & array)"); break;
@@ -220,7 +222,7 @@ inline bool is_symbol(int c){
 }
 
 inline uint8 peek_char(JedlexCtx* ctx, uint64 offset){
-    if(!ctx->in_buffer) return EOF; //or \0;
+    if(!ctx->in_buffer) return '\0'; //or \0;
     if(!(ctx->in_buffer_offset + offset >= 0) || !(ctx->in_buffer_offset+offset < ctx->inbuffer_size)) return EOF;
 
     return ctx->in_buffer[ctx->in_buffer_offset+offset];
@@ -337,7 +339,7 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 // #############################
 // #		COREMODE HANDLERS
 // #############################
-typedef void(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+// typedef bool(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 
 inline void jedlex_config_start(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_size, EJedCoreMode core_mode){
     ctx->is_config_successfull = 1;
@@ -353,19 +355,30 @@ inline void jedlex_config_states_handlers(JedlexCtx* ctx,jedlexHandler* handlers
     }
     ctx->state_handlers_table = handlers;
     ctx->state_handlers_count = size;
+    ctx->is_config_successfull = 1;
 }
 
 inline void jedlex_config_end(JedlexCtx* ctx){
     if(!ctx->is_config_successfull){
         FATAL_TODO("PLEASE FIX LIB CONFIGURATION");
     }
+
 }
 inline bool jmptab_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 
-
-
-
-    return 0;
+    token = NULL;
+    bool break_loop = 0;
+    uint8 current_byte = peek_char(ctx, 0);
+    while (ctx->in_buffer[ctx->in_buffer_offset] != '\0' || !break_loop) {
+        if(ctx->current_state >= 0 && ctx->current_state < ctx->state_handlers_count){
+            break_loop = ctx->state_handlers_table[ctx->current_state](ctx, token, current_byte);
+        }else {
+            break_loop = 1;
+        }
+        advance_char(ctx, 1);
+        current_byte = peek_char(ctx, 0);
+    }
+    return token != NULL;
 }
 
 
