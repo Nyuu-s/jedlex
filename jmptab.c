@@ -5,6 +5,7 @@
 #include <string.h>
 
 bool mystart(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    token->start = (uint8*) &ctx->in_buffer[0];
     for (int i = 0; i<5; i++) {
         add_byte_to_token(ctx, token);
     }
