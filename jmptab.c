@@ -5,7 +5,10 @@
 #include <string.h>
 
 bool mystart(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
-    return 1;
+    for (int i = 0; i<5; i++) {
+        add_byte_to_token(ctx, token);
+    }
+    return 0;
 }
 
 
@@ -23,18 +26,9 @@ int main(){
     TODO("Setup all handlers");
     handlers[JEDSTATE_START] = mystart;
 
-    jedlex_config_start(&ctx, input, strlen((char*)input), COREMODE_JUMP_TABLE); // start config
-    jedlex_config_states_handlers(&ctx, handlers, 1); // overwrite default states with user states
-    jedlex_config_end(&ctx);
+    jedlex_init_handlers(&ctx, input, strlen((char*)input), COREMODE_JUMP_TABLE, handlers, 1); // start config
 
 
-    
-    // when nothing ovrd: use full default 
-    // when only states are overidden expect states[CURRENT_STATE] ==> function_pointer(ctx, token, char current_char)
-
-    // jedlex_init(&ctx, input, strlen((char*)input), COREMODE_JUMP_TABLE);
-    
-    
     while (get_next_token(&ctx, &token)) {    
         printf("Token: %.*s | %s \n", (int)(token.end - token.start), token.start, token_kind_name(token.kind));
     }
