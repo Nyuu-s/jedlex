@@ -109,7 +109,7 @@ bool is_hex(int c);
 bool is_alpha(int c);
 bool is_symbol(int c);
 bool is_whitespace(int c);
-void add_byte_to_token(JedlexCtx* ctx, JedLexToken* tok);
+void add_current_byte_to_token(JedlexCtx* ctx, JedLexToken* tok);
 // #ifdef JEDLEX_IMPLEMENTATION
 
 // #############################
@@ -168,13 +168,15 @@ inline uint8 get_byte(JedlexCtx* ctx, uint64 relative_offset){
     ctx->in_buffer_offset += relative_offset;
     return peek_byte(ctx, 0);
 }
-inline void add_byte_to_token(JedlexCtx* ctx, JedLexToken* tok){
+inline void add_current_byte_to_token(JedlexCtx* ctx, JedLexToken* tok){
     if(ctx->inbuffer_size < ctx->in_buffer_offset+1)
         return;
-    ctx->in_buffer_offset += 1;
+    if(tok->end == NULL || tok->start == NULL){
+        //first time calling it
+        tok->start = tok->end = (uint8*) &ctx->in_buffer[ctx->in_buffer_offset];
+        return;
+    }
     tok->end++;
-
-
 }
 
 inline bool is_num(int c){
@@ -249,11 +251,13 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 
                 if(is_num(current_char)) {
                     if(current_char == '0'){
-                        add_byte_to_token(ctx, token);
+                        add_current_byte_to_token(ctx, token);
+                        ctx->in_buffer_offset++;
                         //hex format handling
                         uint8 next = peek_byte(ctx, 0);
                         if (next == 'x' || next == 'X') {
-                            add_byte_to_token(ctx, token);
+                            add_current_byte_to_token(ctx, token);
+                            ctx->in_buffer_offset++;
                             ctx->current_state = JEDSTATE_HEX;
                             break;
                         }
@@ -262,14 +266,16 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                     break;
                 }
                 else if(is_alpha(current_char) || current_char == '_') {
-                    add_byte_to_token(ctx, token); ctx->current_state = JEDSTATE_IDENTIFIER;
+                    add_current_byte_to_token(ctx, token); ctx->current_state = JEDSTATE_IDENTIFIER;
+                    ctx->in_buffer_offset++;
                 }
                 else if(is_whitespace(current_char)) {
                     ctx->in_buffer_offset++;
                     ctx->current_state = JEDSTATE_WS;
                 }       
                 else if(is_symbol(current_char)) {
-                    add_byte_to_token(ctx, token);
+                    add_current_byte_to_token(ctx, token);
+                    ctx->in_buffer_offset++;
                     ctx->current_state = JEDSTATE_SYMBOL;
                 }
                 else ctx->current_state = JEDSTATE_ERROR;
@@ -277,7 +283,8 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
             }
             case JEDSTATE_IDENTIFIER:{
                 if(is_alpha(current_char) || is_num(current_char) ||current_char == '_'){
-                    add_byte_to_token(ctx, token);
+                    add_current_byte_to_token(ctx, token);
+                    ctx->in_buffer_offset++;
                 }
                 else {
                     token->kind = TOKKIND_IDENTIFIER;
@@ -287,7 +294,8 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
             }
             case JEDSTATE_NUMBER:{
                 if(is_num(current_char)) {
-                    add_byte_to_token(ctx, token);
+                    add_current_byte_to_token(ctx, token);
+                    ctx->in_buffer_offset++;
                 }
                 else{
                     token->kind = TOKKIND_NUMBER;
@@ -308,7 +316,8 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 && current_char != '(' && current_char != ')'
                 && current_char != '{' && current_char != '}'
                 && current_char != '[' && current_char != ']'  ) {
-                    add_byte_to_token(ctx, token);
+                    add_current_byte_to_token(ctx, token);
+                    ctx->in_buffer_offset++;
                 }
                 else {
                     token->kind = TOKKIND_SYMBOL;
@@ -318,7 +327,8 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
             }
             case JEDSTATE_HEX: {
                 if(is_hex(current_char)){
-                    add_byte_to_token(ctx, token);
+                    add_current_byte_to_token(ctx, token);
+                    ctx->in_buffer_offset++;
                 }
                 else {
                     token->kind = TOKKIND_NUMBER;

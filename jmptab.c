@@ -5,9 +5,9 @@
 #include <string.h>
 
 bool mystart(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
-    token->start = (uint8*) &ctx->in_buffer[0];
-    for (int i = 0; i<5; i++) {
-        add_byte_to_token(ctx, token);
+    for (int i = 0; i<7; i++) {
+        add_current_byte_to_token(ctx, token);
+        ctx->in_buffer_offset++;
     }
     return 0;
 }
@@ -34,7 +34,7 @@ int main(){
         printf("Token: %.*s | %s \n", (int)(token.end - token.start), token.start, token_kind_name(token.kind));
     }
 
-    printf("Last Token: %.*s\n", (int)(token.end - token.start), token.start);
+    printf("Last Token: %.*s\n", (int)(token.end - token.start)+1, token.start);
 
     return 0;
 }
