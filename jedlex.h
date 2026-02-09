@@ -35,7 +35,7 @@ typedef char bool;
 
 typedef enum EJedCoreMode{
     COREMODE_SWITCH,
-    COREMODE_JUMP_TABLE,
+    COREMODE_HANDLERS,
     COREMODE_FSM_CLASSIC,
     COREMODE_FSM_MINIMAL,
     COREMODE_COUNT
@@ -86,17 +86,18 @@ struct JedlexCtx {
     bool (*func_next_token)(JedlexCtx* ctx, JedLexToken* token);
 
     //switch zone
-    EJedSwitchState current_state;
+    uint32 current_state;
     //handlers zone
     jedlexHandler* state_handlers_table;
     uint64 state_handlers_count;
-    jedlexHandler default_handlers[JEDSTATE_COUNT];
+    jedlexHandler default_handlers[JEDLEX_MAX_STATE];
+    uint64 fallback_id;
     
     
 };
 
 
-void jedlex_init_handlers(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode, jedlexHandler *handlers, uint32 handlers_size);
+void jedlex_init_handlers(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode, jedlexHandler *handlers, uint32 handlers_size, uint64 fallback_id);
 void jedlex_init(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCoreMode core_mode);
 bool get_next_token(JedlexCtx* ctx, JedLexToken* token);
 bool switch_get_next_token(JedlexCtx *ctx, JedLexToken* token);
@@ -124,8 +125,7 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
             ctx->func_next_token = switch_get_next_token;
             break;
         }
-        case COREMODE_JUMP_TABLE: {
-            TODO("Jump table mode (switch with full states & actions based on a vtable)");
+        case COREMODE_HANDLERS: {
             ctx->func_next_token = handlers_get_next_token;
             break;
         }
@@ -137,7 +137,7 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
     TODO("Make core mode compile time switch rather than runtime");
 }
 
-const char *state_name(EJedSwitchState s) {
+const char *state_name(uint32 s) {
     switch (s) {
         case JEDSTATE_START:        return "STATE_START";
         case JEDSTATE_IDENTIFIER:   return "STATE_IDENTIFIER";
@@ -172,7 +172,7 @@ inline void add_current_byte_to_token(JedlexCtx* ctx, JedLexToken* tok){
     if(ctx->inbuffer_size < ctx->in_buffer_offset+1)
         return;
     if(tok->end == NULL || tok->start == NULL){
-        //first time calling it
+        //first time calling it on this token
         tok->start = tok->end = (uint8*) &ctx->in_buffer[ctx->in_buffer_offset];
         return;
     }
@@ -350,17 +350,12 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 // #		COREMODE HANDLERS
 // #############################
 
-inline void jedlex_init_handlers(
-    JedlexCtx* ctx,
-    uint8* input,
-    uint64 buffer_size, 
-    EJedCoreMode core_mode, 
-    jedlexHandler* handlers, 
-    uint32 handlers_size
-){
-    jedlex_init(ctx, input, buffer_size, core_mode);
-
-    if(handlers == NULL || handlers_size <= 0){
+inline void jedlex_set_handler_for_state(JedlexCtx* ctx, uint32 state, jedlexHandler handler ){
+    if(state < 0 ||state >= ctx->state_handlers_count) FATAL_TODO("state value has to be a valid index");
+    ctx->state_handlers_table[state] = handler;
+} 
+inline void jedlex_replace_all_handlers(JedlexCtx* ctx, jedlexHandler* handlers ,uint64 handlers_amount, uint64 fallback_id){ 
+    if(handlers == NULL || handlers_amount <= 0){
         TODO("Fallback to default handler array!");
         // ctx->default_handlers[JEDSTATE_START] = default_HStart;
         // ctx->default_handlers[JEDSTATE_ERROR] = default_HError;
@@ -368,10 +363,42 @@ inline void jedlex_init_handlers(
         // ctx->default_handlers[JEDSTATE_NUMBER] = default_HNumber;
         ctx->state_handlers_table = ctx->default_handlers;
         ctx->state_handlers_count = JEDSTATE_COUNT;
-        return;
+    }
+    if(fallback_id < 0 || fallback_id >= handlers_amount){
+        ctx->fallback_id = 0;
+    }else {
+        ctx->fallback_id = fallback_id;
     }
     ctx->state_handlers_table = handlers;
-    ctx->state_handlers_count = handlers_size;
+    ctx->state_handlers_count = handlers_amount;
+};
+inline void jedlex_init_handlers(
+    JedlexCtx* ctx,
+    uint8* input,
+    uint64 buffer_size, 
+    EJedCoreMode core_mode, 
+    jedlexHandler* handlers, 
+    uint32 handlers_size,
+    uint64 fallback_id
+){
+    jedlex_init(ctx, input, buffer_size, core_mode);
+    // if(handlers == NULL || handlers_size <= 0){
+    //     TODO("Fallback to default handler array!");
+    //     // ctx->default_handlers[JEDSTATE_START] = default_HStart;
+    //     // ctx->default_handlers[JEDSTATE_ERROR] = default_HError;
+    //     // ctx->default_handlers[JEDSTATE_IDENTIFIER] = default_HIdentifier;
+    //     // ctx->default_handlers[JEDSTATE_NUMBER] = default_HNumber;
+        ctx->state_handlers_table = ctx->default_handlers;
+        ctx->state_handlers_count = JEDSTATE_COUNT;
+        return;
+    // }
+    // ctx->state_handlers_table = handlers;
+    // ctx->state_handlers_count = handlers_size;
+    // if(fallback_id < 0 || fallback_id >= ctx->state_handlers_count){
+    //     ctx->fallback_id = 0;
+    // }else {
+    //     ctx->fallback_id = fallback_id;
+    // }
 }
 
 
@@ -383,7 +410,9 @@ inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
     if(ctx->current_state < 0 || ctx->current_state >= ctx->state_handlers_count) return 0;
     jedlexHandler handler = ctx->state_handlers_table[ctx->current_state];
     if(!handler){
-        FATAL_TODO("Fallback: No handlers for that state ");
+        // FATAL_TODO("Fallback: No handlers for that state ");
+        ctx->current_state = 0;
+        return 1;
     }
     bool response = handler(ctx, token, peek_byte(ctx, 0));
 

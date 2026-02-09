@@ -27,8 +27,11 @@ int main(){
     TODO("Setup all handlers");
     handlers[JEDSTATE_START] = mystart;
 
-    jedlex_init_handlers(&ctx, input, strlen((char*)input), COREMODE_JUMP_TABLE, handlers, 1); // start config
-
+    jedlex_init_handlers(&ctx, input, strlen((char*)input), COREMODE_HANDLERS, handlers, 1, 0); // start config
+    // Option A replace default array with user array
+    // jedlex_replace_all_handlers(&ctx, handlers, 1 , 0 );
+    // Option B: extends current array
+    // jedlex_set_handler_for_state(&ctx, JEDSTATE_START, mystart);
 
     while (get_next_token(&ctx, &token)) {    
         printf("Token: %.*s | %s \n", (int)(token.end - token.start), token.start, token_kind_name(token.kind));
