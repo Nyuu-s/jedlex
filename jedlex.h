@@ -25,7 +25,6 @@ typedef unsigned int jedlexInitFlags;
 #define JEDLEX_CLS_CLASSIFY(type, string, length) TODO("Implement default lookup classifier")
 #define JEDLEX_CLS_FREE  (type, string, length) TODO("Implement default free classifier")
 
-#define MAX_STATES 1024
 
 
 typedef unsigned long long   uint64;
@@ -53,6 +52,7 @@ typedef enum EJedSwitchTokenKind{
 typedef enum EJedSwitchState{
     JEDSTATE_START,
     JEDSTATE_ERROR,
+    JEDSTATE_EMIT,
     JEDSTATE_IDENTIFIER,
     JEDSTATE_NUMBER,
     JEDSTATE_HEX,
@@ -90,14 +90,14 @@ struct JedlexCtx {
     //handlers zone
     jedlexHandler* state_handlers_table;
     uint64 state_handlers_count;
-    jedlexHandler default_handlers[JEDLEX_MAX_STATE];
+    bool using_defaut_handlers;
     uint64 fallback_id;
     
     
 };
 
 
-void jedlex_init_handlers(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode, jedlexHandler *handlers, uint32 handlers_size, uint64 fallback_id);
+void jedlex_init_handlers(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode);
 void jedlex_init(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCoreMode core_mode);
 bool get_next_token(JedlexCtx* ctx, JedLexToken* token);
 bool switch_get_next_token(JedlexCtx *ctx, JedLexToken* token);
@@ -111,6 +111,17 @@ bool is_alpha(int c);
 bool is_symbol(int c);
 bool is_whitespace(int c);
 void add_current_byte_to_token(JedlexCtx* ctx, JedLexToken* tok);
+
+void jedlex_set_handlers_table(JedlexCtx* ctx, jedlexHandler* handlers ,uint64 handlers_amount, uint64 fallback_id);
+void jedlex_set_handler_for_state(JedlexCtx* ctx, uint32 state, jedlexHandler handler );
+
+bool dh_start(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+bool dh_error(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+bool dh_identifier(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+bool dh_number(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+bool dh_hex(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+bool dh_symbol(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
+bool dh_whitespace(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 // #ifdef JEDLEX_IMPLEMENTATION
 
 // #############################
@@ -229,6 +240,110 @@ inline uint8 peek_byte(JedlexCtx* ctx, uint64 relative_offset){
     return ctx->in_buffer[ctx->in_buffer_offset+relative_offset];
 }
 
+inline bool dh_identifier(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    if(is_alpha(byte) || is_num(byte) ||byte == '_'){
+        add_current_byte_to_token(ctx, token);
+        ctx->in_buffer_offset++;
+    }
+    else {
+        token->kind = TOKKIND_IDENTIFIER;
+        ctx->current_state = JEDSTATE_EMIT;
+        return 1;
+    }
+    return 0;
+}
+
+inline bool dh_number(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    if(is_num(byte)) {
+        add_current_byte_to_token(ctx, token);
+        ctx->in_buffer_offset++;
+    }
+    else {
+        token->kind = TOKKIND_NUMBER;
+        ctx->current_state = JEDSTATE_EMIT; // for coremode switch
+        return 1; // for coremode handler table
+    }
+    return 0;
+}
+inline bool dh_start(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    token->start    =   NULL; //(uint8*) ctx->in_buffer + ctx->in_buffer_offset;
+    token->end      =   NULL; //(uint8*) ctx->in_buffer + ctx->in_buffer_offset;
+    if(is_num(byte)) {
+        if(byte == '0'){
+            add_current_byte_to_token(ctx, token);
+            ctx->in_buffer_offset++;
+            //hex format handling
+            uint8 next = peek_byte(ctx, 0);
+            if (next == 'x' || next == 'X') {
+                add_current_byte_to_token(ctx, token);
+                ctx->in_buffer_offset++;
+                ctx->current_state = JEDSTATE_HEX;
+                return 0;
+            }
+        }
+        ctx->current_state = JEDSTATE_NUMBER;
+    }
+    else if(is_alpha(byte) || byte == '_') {
+        add_current_byte_to_token(ctx, token); ctx->current_state = JEDSTATE_IDENTIFIER;
+        ctx->in_buffer_offset++;
+    }
+    else if(is_whitespace(byte)) {
+        ctx->in_buffer_offset++;
+        ctx->current_state = JEDSTATE_WS;
+    }       
+    else if(is_symbol(byte)) {
+        add_current_byte_to_token(ctx, token);
+        ctx->in_buffer_offset++;
+        ctx->current_state = JEDSTATE_SYMBOL;
+    }
+    else ctx->current_state = JEDSTATE_ERROR;
+
+    return 0;
+}
+
+inline bool dh_whitespace(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    if (is_whitespace(byte)) {
+        ctx->in_buffer_offset++;
+    }else {
+        ctx->current_state = JEDSTATE_START;
+    }
+    return 0;
+}
+
+inline bool dh_symbol(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    if (is_symbol(byte) 
+        && byte != '(' && byte != ')'
+        && byte != '{' && byte != '}'
+        && byte != '[' && byte != ']'  ) {
+        add_current_byte_to_token(ctx, token);
+        ctx->in_buffer_offset++;
+    }
+    else {
+        token->kind = TOKKIND_SYMBOL;
+        ctx->current_state = JEDSTATE_EMIT;
+        return 1;
+    }
+    return 0;
+}
+
+inline bool dh_error(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    token->kind = TOKKIND_UNKNOWN;
+    return 0;
+}
+
+inline bool dh_hex(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+    if(is_hex(byte)){
+        add_current_byte_to_token(ctx, token);
+        ctx->in_buffer_offset++;
+    }
+    else {
+        token->kind = TOKKIND_NUMBER;
+        ctx->current_state = JEDSTATE_EMIT;
+        return 1;
+    }
+    return 0;
+}
+
 
 inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
     token->end = 0;
@@ -237,20 +352,15 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
     uint32 state_counters[JEDSTATE_COUNT];
     while (ctx->in_buffer[ctx->in_buffer_offset] != '\0') {
 
-        uint8 current_char = peek_byte(ctx, 0);
-        state_counters[ctx->current_state]++;
-
-        printf("state: %s, char: %c\n", state_name(ctx->current_state), current_char);
+        uint8 current_byte = peek_byte(ctx, 0);
+        
+        printf("state: %s, char: %c\n", state_name(ctx->current_state), current_byte);
         switch (ctx->current_state) {
             case JEDSTATE_START:{
-                for (int i =0; i<JEDSTATE_COUNT; ++i) {
-                    state_counters[i] = 0;
-                }
-                token->start    =   (uint8*) ctx->in_buffer + ctx->in_buffer_offset;
-                token->end      =   (uint8*) ctx->in_buffer + ctx->in_buffer_offset;
-                
-                if(is_num(current_char)) {
-                    if(current_char == '0'){
+                token->start    =   NULL; //(uint8*) ctx->in_buffer + ctx->in_buffer_offset;
+                token->end      =   NULL; //(uint8*) ctx->in_buffer + ctx->in_buffer_offset;
+                if(is_num(current_byte)) {
+                    if(current_byte == '0'){
                         add_current_byte_to_token(ctx, token);
                         ctx->in_buffer_offset++;
                         //hex format handling
@@ -265,15 +375,15 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                     ctx->current_state = JEDSTATE_NUMBER;
                     break;
                 }
-                else if(is_alpha(current_char) || current_char == '_') {
+                else if(is_alpha(current_byte) || current_byte == '_') {
                     add_current_byte_to_token(ctx, token); ctx->current_state = JEDSTATE_IDENTIFIER;
                     ctx->in_buffer_offset++;
                 }
-                else if(is_whitespace(current_char)) {
+                else if(is_whitespace(current_byte)) {
                     ctx->in_buffer_offset++;
                     ctx->current_state = JEDSTATE_WS;
                 }       
-                else if(is_symbol(current_char)) {
+                else if(is_symbol(current_byte)) {
                     add_current_byte_to_token(ctx, token);
                     ctx->in_buffer_offset++;
                     ctx->current_state = JEDSTATE_SYMBOL;
@@ -282,7 +392,7 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 break;
             }
             case JEDSTATE_IDENTIFIER:{
-                if(is_alpha(current_char) || is_num(current_char) ||current_char == '_'){
+                if(is_alpha(current_byte) || is_num(current_byte) ||current_byte == '_'){
                     add_current_byte_to_token(ctx, token);
                     ctx->in_buffer_offset++;
                 }
@@ -293,7 +403,7 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 break;
             }
             case JEDSTATE_NUMBER:{
-                if(is_num(current_char)) {
+                if(is_num(current_byte)) {
                     add_current_byte_to_token(ctx, token);
                     ctx->in_buffer_offset++;
                 }
@@ -304,7 +414,7 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 break;
             }
             case JEDSTATE_WS:{
-                if (is_whitespace(current_char)) {
+                if (is_whitespace(current_byte)) {
                     ctx->in_buffer_offset++;
                 }else {
                     ctx->current_state = JEDSTATE_START;
@@ -312,10 +422,10 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 break;
             }
             case JEDSTATE_SYMBOL:{
-                if (is_symbol(current_char) 
-                && current_char != '(' && current_char != ')'
-                && current_char != '{' && current_char != '}'
-                && current_char != '[' && current_char != ']'  ) {
+                if (is_symbol(current_byte )
+                && current_byte != '(' && current_byte != ')'
+                && current_byte != '{' && current_byte != '}'
+                && current_byte != '[' && current_byte != ']'  ) {
                     add_current_byte_to_token(ctx, token);
                     ctx->in_buffer_offset++;
                 }
@@ -326,7 +436,7 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
                 break;
             }
             case JEDSTATE_HEX: {
-                if(is_hex(current_char)){
+                if(is_hex(current_byte)){
                     add_current_byte_to_token(ctx, token);
                     ctx->in_buffer_offset++;
                 }
@@ -350,19 +460,45 @@ inline bool switch_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 // #		COREMODE HANDLERS
 // #############################
 
+//only in C99+
+static jedlexHandler default_handlers[JEDLEX_MAX_STATE] = {
+    // [JEDSTATE_START]         = dh_start,  
+    // [JEDSTATE_ERROR]         = dh_start,
+    // [JEDSTATE_IDENTIFIER]    = dh_start,
+    // [JEDSTATE_NUMBER]        = dh_start,
+    // [JEDSTATE_HEX]           = dh_start,
+    // [JEDSTATE_SYMBOL]        = dh_start,
+    // [JEDSTATE_WS]            = dh_start,
+};
+    
+
 inline void jedlex_set_handler_for_state(JedlexCtx* ctx, uint32 state, jedlexHandler handler ){
-    if(state < 0 ||state >= ctx->state_handlers_count) FATAL_TODO("state value has to be a valid index");
+    if(ctx->using_defaut_handlers){
+        if(state < 0 || state >= JEDLEX_MAX_STATE){  
+            FATAL_TODO("state value cannot be bigger than JEDLEX_MAX_STATE nor less than 0");
+            return;
+        }
+        if(state >= ctx->state_handlers_count){
+            ctx->state_handlers_count = state;
+        }
+    }
+    else {
+        if(state < 0 || state >= ctx->state_handlers_count){ 
+            FATAL_TODO("state value has to be a valid index");
+            return;
+        }
+    }
+
     ctx->state_handlers_table[state] = handler;
 } 
-inline void jedlex_replace_all_handlers(JedlexCtx* ctx, jedlexHandler* handlers ,uint64 handlers_amount, uint64 fallback_id){ 
+inline void jedlex_set_handlers_table(JedlexCtx* ctx, jedlexHandler* handlers ,uint64 handlers_amount, uint64 fallback_id){ 
     if(handlers == NULL || handlers_amount <= 0){
-        TODO("Fallback to default handler array!");
-        // ctx->default_handlers[JEDSTATE_START] = default_HStart;
-        // ctx->default_handlers[JEDSTATE_ERROR] = default_HError;
-        // ctx->default_handlers[JEDSTATE_IDENTIFIER] = default_HIdentifier;
-        // ctx->default_handlers[JEDSTATE_NUMBER] = default_HNumber;
-        ctx->state_handlers_table = ctx->default_handlers;
+        //switch back to default
         ctx->state_handlers_count = JEDSTATE_COUNT;
+        ctx->state_handlers_table = (jedlexHandler*) default_handlers;
+        ctx->using_defaut_handlers = 1;
+        ctx->fallback_id = 0;
+        return;
     }
     if(fallback_id < 0 || fallback_id >= handlers_amount){
         ctx->fallback_id = 0;
@@ -371,39 +507,32 @@ inline void jedlex_replace_all_handlers(JedlexCtx* ctx, jedlexHandler* handlers 
     }
     ctx->state_handlers_table = handlers;
     ctx->state_handlers_count = handlers_amount;
+    ctx->using_defaut_handlers = 0;
 };
 inline void jedlex_init_handlers(
     JedlexCtx* ctx,
     uint8* input,
     uint64 buffer_size, 
-    EJedCoreMode core_mode, 
-    jedlexHandler* handlers, 
-    uint32 handlers_size,
-    uint64 fallback_id
+    EJedCoreMode core_mode
 ){
     jedlex_init(ctx, input, buffer_size, core_mode);
-    // if(handlers == NULL || handlers_size <= 0){
-    //     TODO("Fallback to default handler array!");
-    //     // ctx->default_handlers[JEDSTATE_START] = default_HStart;
-    //     // ctx->default_handlers[JEDSTATE_ERROR] = default_HError;
-    //     // ctx->default_handlers[JEDSTATE_IDENTIFIER] = default_HIdentifier;
-    //     // ctx->default_handlers[JEDSTATE_NUMBER] = default_HNumber;
-        ctx->state_handlers_table = ctx->default_handlers;
-        ctx->state_handlers_count = JEDSTATE_COUNT;
-        return;
-    // }
-    // ctx->state_handlers_table = handlers;
-    // ctx->state_handlers_count = handlers_size;
-    // if(fallback_id < 0 || fallback_id >= ctx->state_handlers_count){
-    //     ctx->fallback_id = 0;
-    // }else {
-    //     ctx->fallback_id = fallback_id;
-    // }
+    default_handlers[JEDSTATE_START]         = dh_start;
+    default_handlers[JEDSTATE_ERROR]         = dh_error;
+    default_handlers[JEDSTATE_IDENTIFIER]    = dh_identifier;
+    default_handlers[JEDSTATE_NUMBER]        = dh_number;
+    default_handlers[JEDSTATE_HEX]           = dh_hex;
+    default_handlers[JEDSTATE_SYMBOL]        = dh_symbol;
+    default_handlers[JEDSTATE_WS]            = dh_whitespace;
+    ctx->state_handlers_table = (jedlexHandler*) default_handlers;
+    ctx->state_handlers_count = JEDSTATE_COUNT;
+    ctx->using_defaut_handlers = 1;
+    return;
 }
 
 
 inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
-
+    bool response = 0;
+    TODO("Loop until endof");
     token->start = 0;
     token->kind = TOKKIND_UNKNOWN;
     token->end = 0;
@@ -414,9 +543,11 @@ inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
         ctx->current_state = 0;
         return 1;
     }
-    bool response = handler(ctx, token, peek_byte(ctx, 0));
+    TODO("Do something better with response or remove it / use emit state");
+    response = handler(ctx, token, peek_byte(ctx, 0));
 
-    return response && token != NULL;
+
+    return ctx->in_buffer_offset < ctx->inbuffer_size;
 }
 
 
