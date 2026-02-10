@@ -4,12 +4,13 @@
 #include <stdint.h>
 #include <string.h>
 
-bool mystart(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
+
+int32 mystart(JedlexCtx* ctx, JedLexToken* token, uint8 byte){
     for (int i = 0; i<7; i++) {
         add_current_byte_to_token(ctx, token);
         ctx->in_buffer_offset++;
     }
-    return 0;
+    return JEDLEX_HANDLER_EMIT;
 }
 
 
