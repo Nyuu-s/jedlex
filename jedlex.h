@@ -82,6 +82,7 @@ typedef struct JedLexToken{
 }  JedLexToken;
 
 typedef struct JedlexCtx  JedlexCtx;
+typedef struct FSMCtx FSMCtx ;
 typedef int(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 
 struct JedlexCtx {
@@ -98,9 +99,11 @@ struct JedlexCtx {
     //handlers zone
     jedlexHandler* state_handlers_table;
     uint64 state_handlers_count;
-    bool using_defaut_handlers;
     uint64 fallback_id;
-    
+    bool using_defaut_handlers;
+
+    //FSM zone
+    FSMCtx* fsm;
     
 };
 
@@ -541,8 +544,6 @@ inline void jedlex_init_handlers(
     ctx->using_defaut_handlers = 1;
     return;
 }
-
-
 inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
     if( ctx->in_buffer_offset >= ctx->inbuffer_size ){
         return 0;
@@ -564,6 +565,38 @@ inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 
     return response > JEDLEX_HANDLER_CONTINUE;
 }
+
+// #############################
+// #		COREMODE FSM
+// #############################
+
+typedef struct{
+    uint8 on_byte;
+    uint32 to_id;
+} FSMTransition;
+
+typedef struct{
+    FSMTransition* transitions;
+    uint32 fallback_id;
+    uint32 id;
+} FSMState;
+
+#define FSM_MAX_STATE 64
+
+struct FSMCtx {
+    FSMState* states[FSM_MAX_STATE];
+    uint64 state_count;
+};
+
+FSMState* linear_find_state(FSMState** states, uint64 size, uint32 search_id);
+void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode);
+void jedlex_get_next_token_fsm(JedlexCtx* ctx, JedLexToken* token);
+
+void jedlex_add_single_transition(FSMState* from, FSMState* to, uint8 on_byte);
+void jedlex_add_single_range_transition(FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range);
+
+void jedlex_add_state(FSMState* state);
+
 
 
 #endif
