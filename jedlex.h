@@ -569,6 +569,8 @@ inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 // #############################
 // #		COREMODE FSM
 // #############################
+#define FSM_MAX_STATE 64
+#define FSM_MAX_TRANSITIONS 256
 
 typedef struct{
     uint8 on_byte;
@@ -576,26 +578,69 @@ typedef struct{
 } FSMTransition;
 
 typedef struct{
-    FSMTransition* transitions;
+    uint64 transitions_start;
+    uint64 transitions_count;
+    jedlexHandler* handler;
     uint32 fallback_id;
     uint32 id;
 } FSMState;
 
-#define FSM_MAX_STATE 64
 
 struct FSMCtx {
     FSMState* states[FSM_MAX_STATE];
+    FSMTransition transitions[FSM_MAX_TRANSITIONS];
     uint64 state_count;
 };
 
 FSMState* linear_find_state(FSMState** states, uint64 size, uint32 search_id);
+FSMState* get_state_by_id(JedlexCtx* ctx, uint32 search_id);
+
 void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode);
 void jedlex_get_next_token_fsm(JedlexCtx* ctx, JedLexToken* token);
 
-void jedlex_add_single_transition(FSMState* from, FSMState* to, uint8 on_byte);
+void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte);
 void jedlex_add_single_range_transition(FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range);
 
-void jedlex_add_state(FSMState* state);
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state);
+
+
+void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte){
+    TODO("Maybe use ids instead of state ptrs");
+    uint64 offset = from->transitions_start + from->transitions_count;
+    if(offset <= 0 || offset >= FSM_MAX_TRANSITIONS ) {
+        FATAL_TODO("Error: Invalid transition range");
+    }
+    ctx->fsm->transitions[from->transitions_start + from->transitions_count++] = (FSMTransition) {on_byte,to->id};
+}
+
+void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range){
+    uint32 range_count = higher_range - lower_byte;
+    for (int i =0; i<range_count; ++i) {
+        jedlex_add_single_transition(ctx, from, to, (uint8)(lower_byte + i));
+    }
+
+}
+
+void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode){
+    jedlex_init(ctx, input,buffer_size , core_mode);
+    ctx->fsm->state_count = 0;
+}
+
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state){
+    if(state == NULL) return;
+    // if(state->transition_count <= 0) return;
+    
+    if(state->id >= 0 && state->id < FSM_MAX_STATE){
+        if(ctx->fsm->states[state->id] != NULL){
+            TODO("handle error: A state already exists with that id!");
+            return;
+        }
+        ctx->fsm->states[state->id] = state;
+        ctx->fsm->state_count++;
+        return;
+    }
+    TODO("handle error: state id has invalid range");
+}
 
 
 
