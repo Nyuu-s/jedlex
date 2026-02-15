@@ -113,6 +113,7 @@ void jedlex_init(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCor
 bool get_next_token(JedlexCtx* ctx, JedLexToken* token);
 bool switch_get_next_token(JedlexCtx *ctx, JedLexToken* token);
 bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken* token);
+bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token);
 uint8 peek_byte(JedlexCtx* ctx, uint64 offset);
 uint8 get_byte(JedlexCtx* ctx, uint64 step);
 bool is_alphanum(int c);
@@ -151,7 +152,10 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
             ctx->func_next_token = handlers_get_next_token;
             break;
         }
-        case COREMODE_FSM_CLASSIC: FATAL_TODO("FSM classic mode (struct & array)"); break;
+        case COREMODE_FSM_CLASSIC: {
+            ctx->func_next_token = fsm_get_next_token;
+            break;
+        };
         case COREMODE_FSM_MINIMAL: FATAL_TODO("FSM minimal mode (row compression, 1D array & offsets)"); break;
         default:FATAL_TODO("Unsuported core mode!");break;
     }
@@ -573,13 +577,15 @@ inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 #define FSM_MAX_TRANSITIONS 256
 
 typedef struct{
-    uint8 on_byte;
+    uint8 lower, higher;
     uint32 to_id;
 } FSMTransition;
 
 typedef struct{
-    uint64 transitions_start;
-    uint64 transitions_count;
+    // FSMTransition* transitions;
+    uint64 tr_offset;
+    uint64 tr_count;
+    uint64 tr_capacity;
     jedlexHandler* handler;
     uint32 fallback_id;
     uint32 id;
@@ -590,35 +596,38 @@ struct FSMCtx {
     FSMState* states[FSM_MAX_STATE];
     FSMTransition transitions[FSM_MAX_TRANSITIONS];
     uint64 state_count;
+    uint64 tr_reserved;
 };
 
 FSMState* linear_find_state(FSMState** states, uint64 size, uint32 search_id);
-FSMState* get_state_by_id(JedlexCtx* ctx, uint32 search_id);
+FSMState* get_state_by_id(FSMState** states, uint32 search_id);
 
 void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode);
-void jedlex_get_next_token_fsm(JedlexCtx* ctx, JedLexToken* token);
 
 void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte);
-void jedlex_add_single_range_transition(FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range);
+void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range);
 
-void jedlex_add_state(JedlexCtx *ctx, FSMState* state);
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max);
 
 
+/*
+    Transitions are range based,
+    so range a-z count as 1 transition not 26
+*/
 void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte){
-    TODO("Maybe use ids instead of state ptrs");
-    uint64 offset = from->transitions_start + from->transitions_count;
-    if(offset <= 0 || offset >= FSM_MAX_TRANSITIONS ) {
-        FATAL_TODO("Error: Invalid transition range");
-    }
-    ctx->fsm->transitions[from->transitions_start + from->transitions_count++] = (FSMTransition) {on_byte,to->id};
+    
+    jedlex_add_single_range_transition(ctx, from, to, on_byte, on_byte);
 }
-
-void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range){
-    uint32 range_count = higher_range - lower_byte;
-    for (int i =0; i<range_count; ++i) {
-        jedlex_add_single_transition(ctx, from, to, (uint8)(lower_byte + i));
+void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_byte){
+    uint64 offset = from->tr_offset + from->tr_count;
+    if(from->tr_count + 1 >= from->tr_capacity) {
+        FATAL_TODO("Error: Transition do not fit in state");
     }
-
+    if(offset < 0 || offset + 1 >= FSM_MAX_TRANSITIONS ) {
+        FATAL_TODO("Error: Transition range out of array bounds");
+    }
+    
+    ctx->fsm->transitions[from->tr_count++] = (FSMTransition) {lower_byte, higher_byte};
 }
 
 void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode){
@@ -626,7 +635,7 @@ void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreM
     ctx->fsm->state_count = 0;
 }
 
-void jedlex_add_state(JedlexCtx *ctx, FSMState* state){
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max){
     if(state == NULL) return;
     // if(state->transition_count <= 0) return;
     
@@ -637,11 +646,34 @@ void jedlex_add_state(JedlexCtx *ctx, FSMState* state){
         }
         ctx->fsm->states[state->id] = state;
         ctx->fsm->state_count++;
+        state->tr_capacity = transition_max;
+        
+        state->tr_offset = ctx->fsm->tr_reserved;
+        ctx->fsm->tr_reserved += transition_max;
         return;
     }
     TODO("handle error: state id has invalid range");
 }
 
+FSMState* get_state_by_id(FSMState** states, uint32 search_id){
+    TODO("Some check / fallback if no state match ? ");
+    return states[search_id];
+}
 
+bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
+
+    while (1) {
+        uint8 current_byte = peek_byte(ctx, 0);
+        FSMState* s = get_state_by_id(ctx->fsm->states, ctx->current_state);
+        for (uint32 i = s->tr_offset; i < s->tr_count; i++) {
+            if(current_byte <= ctx->fsm->transitions[i].lower && current_byte >= ctx->fsm->transitions[i].higher){
+                FSMState* next = get_state_by_id(ctx->fsm->states, ctx->fsm->transitions[i].to_id);
+                if(next == NULL) FATAL_TODO("handle no next state");
+                ctx->current_state = next->id;
+                break;
+            }
+        }
+    }
+}
 
 #endif
