@@ -85,6 +85,37 @@ typedef struct JedlexCtx  JedlexCtx;
 typedef struct FSMCtx FSMCtx ;
 typedef int(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 
+typedef enum EFsmActions {
+    JEDACT_CONTINUE,
+    JEDACT_EMIT,
+    JEDACT_ERROR
+} EFsmActions;
+
+typedef struct{
+    uint8 lower, higher;
+    uint32 to_id;
+} FSMTransition;
+
+typedef struct{
+    // FSMTransition* transitions;
+    uint64 tr_offset;
+    uint64 tr_count;
+    uint64 tr_capacity;
+    uint32 fallback_id;
+    uint32 id;
+    EFsmActions action;
+} FSMState;
+
+#define FSM_MAX_STATE 64
+#define FSM_MAX_TRANSITIONS 256
+struct FSMCtx {
+    FSMState* states[FSM_MAX_STATE];
+    FSMTransition transitions[FSM_MAX_TRANSITIONS];
+    uint64 state_count;
+    uint64 tr_reserved;
+};
+
+
 struct JedlexCtx {
     // Lexer -- zone
     const uint8* in_buffer;           //let user manage IO, and buffer alloc
@@ -103,7 +134,7 @@ struct JedlexCtx {
     bool using_defaut_handlers;
 
     //FSM zone
-    FSMCtx* fsm;
+    FSMCtx fsm;
     
 };
 
@@ -573,31 +604,10 @@ inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 // #############################
 // #		COREMODE FSM
 // #############################
-#define FSM_MAX_STATE 64
-#define FSM_MAX_TRANSITIONS 256
-
-typedef struct{
-    uint8 lower, higher;
-    uint32 to_id;
-} FSMTransition;
-
-typedef struct{
-    // FSMTransition* transitions;
-    uint64 tr_offset;
-    uint64 tr_count;
-    uint64 tr_capacity;
-    jedlexHandler* handler;
-    uint32 fallback_id;
-    uint32 id;
-} FSMState;
 
 
-struct FSMCtx {
-    FSMState* states[FSM_MAX_STATE];
-    FSMTransition transitions[FSM_MAX_TRANSITIONS];
-    uint64 state_count;
-    uint64 tr_reserved;
-};
+
+
 
 FSMState* linear_find_state(FSMState** states, uint64 size, uint32 search_id);
 FSMState* get_state_by_id(FSMState** states, uint32 search_id);
@@ -618,6 +628,10 @@ void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, 
     
     jedlex_add_single_range_transition(ctx, from, to, on_byte, on_byte);
 }
+/*
+    Transitions are range based,
+    so range a-z count as 1 transition not 26
+*/
 void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_byte){
     uint64 offset = from->tr_offset + from->tr_count;
     if(from->tr_count + 1 >= from->tr_capacity) {
@@ -627,12 +641,12 @@ void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState
         FATAL_TODO("Error: Transition range out of array bounds");
     }
     
-    ctx->fsm->transitions[from->tr_count++] = (FSMTransition) {lower_byte, higher_byte};
+    ctx->fsm.transitions[from->tr_offset + from->tr_count++] = (FSMTransition) {lower_byte, higher_byte, to->id};
 }
 
 void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode){
     jedlex_init(ctx, input,buffer_size , core_mode);
-    ctx->fsm->state_count = 0;
+    ctx->fsm.state_count = 0;
 }
 
 void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max){
@@ -640,16 +654,16 @@ void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max){
     // if(state->transition_count <= 0) return;
     
     if(state->id >= 0 && state->id < FSM_MAX_STATE){
-        if(ctx->fsm->states[state->id] != NULL){
-            TODO("handle error: A state already exists with that id!");
+        if(ctx->fsm.states[state->id] != NULL){
+            FATAL_TODO("handle error: A state already exists with that id!");
             return;
         }
-        ctx->fsm->states[state->id] = state;
-        ctx->fsm->state_count++;
+        ctx->fsm.states[state->id] = state;
+        ctx->fsm.state_count++;
         state->tr_capacity = transition_max;
-        
-        state->tr_offset = ctx->fsm->tr_reserved;
-        ctx->fsm->tr_reserved += transition_max;
+
+        state->tr_offset = ctx->fsm.tr_reserved;
+        ctx->fsm.tr_reserved += transition_max;
         return;
     }
     TODO("handle error: state id has invalid range");
@@ -661,19 +675,40 @@ FSMState* get_state_by_id(FSMState** states, uint32 search_id){
 }
 
 bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
+    uint8 current_byte;
+    token->end = 0;
+    token->start = 0;
 
-    while (1) {
-        uint8 current_byte = peek_byte(ctx, 0);
-        FSMState* s = get_state_by_id(ctx->fsm->states, ctx->current_state);
-        for (uint32 i = s->tr_offset; i < s->tr_count; i++) {
-            if(current_byte <= ctx->fsm->transitions[i].lower && current_byte >= ctx->fsm->transitions[i].higher){
-                FSMState* next = get_state_by_id(ctx->fsm->states, ctx->fsm->transitions[i].to_id);
-                if(next == NULL) FATAL_TODO("handle no next state");
-                ctx->current_state = next->id;
+    while (ctx->in_buffer_offset < ctx->inbuffer_size) {
+        current_byte = peek_byte(ctx, 0);
+        FSMState* s = get_state_by_id(ctx->fsm.states, ctx->current_state);
+        bool t_found = 0;
+        for (uint32 i = s->tr_offset; i < s->tr_offset + s->tr_count; i++) {
+            if(current_byte >= ctx->fsm.transitions[i].lower && current_byte <= ctx->fsm.transitions[i].higher){
+                t_found = 1;
+                FSMState* next = get_state_by_id(ctx->fsm.states, ctx->fsm.transitions[i].to_id);
+                if(next == NULL) {
+                    ctx->current_state = s->fallback_id;
+                }else{
+                    if(next->action == JEDACT_ERROR)    return 0;
+                    add_current_byte_to_token(ctx, token);
+                    ctx->current_state = next->id;
+                    if(next->action == JEDACT_CONTINUE) break;
+
+                    return 1;
+                }
                 break;
             }
         }
+        if(t_found == 0){
+            // no transition found for current state and char, fallback 
+            // and emit current token
+            ctx->current_state = s->fallback_id;
+            return token->end != token->start;
+        }
+        ctx->in_buffer_offset++;
     }
+    return 0;
 }
 
 #endif
