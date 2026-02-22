@@ -14,14 +14,14 @@ int main(){
     printf("res: %d", (uint8)'z'-(uint8)'a');
 
     FSMState start = {0};
-    FSMState s2 = {.id = 1};
+    FSMState ident = {.id = 1};
 
     jedlex_init_fsm(&ctx, input, strlen((char*)input), COREMODE_FSM_CLASSIC);
-    jedlex_add_state(&ctx, &start, 10);
-    jedlex_add_state(&ctx, &s2, 10);
+    jedlex_add_state(&ctx, &start, 10, 1);
+    jedlex_add_state(&ctx, &ident, 10, 1);
 
-    jedlex_add_single_range_transition(&ctx, &start, &s2, 'a', 'z');
-    jedlex_add_single_range_transition(&ctx, &s2, &s2, 'a', 'z');
+    jedlex_add_single_range_transition(&ctx, &start, &ident, 'a', 'z');
+    jedlex_add_single_range_transition(&ctx, &ident, &ident, 'a', 'z');
 
     while(get_next_token(&ctx, &token)){
         printf("Token: %.*s | %s \n", (int)(token.end - token.start)+1, token.start, token_kind_name(token.kind));

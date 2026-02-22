@@ -85,11 +85,6 @@ typedef struct JedlexCtx  JedlexCtx;
 typedef struct FSMCtx FSMCtx ;
 typedef int(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 
-typedef enum EFsmActions {
-    JEDACT_CONTINUE,
-    JEDACT_EMIT,
-    JEDACT_ERROR
-} EFsmActions;
 
 typedef struct{
     uint8 lower, higher;
@@ -103,7 +98,8 @@ typedef struct{
     uint64 tr_capacity;
     uint32 fallback_id;
     uint32 id;
-    EFsmActions action;
+    bool is_accepting;
+
 } FSMState;
 
 #define FSM_MAX_STATE 64
@@ -610,14 +606,14 @@ inline bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken *token){
 
 
 FSMState* linear_find_state(FSMState** states, uint64 size, uint32 search_id);
-FSMState* get_state_by_id(FSMState** states, uint32 search_id);
+FSMState* get_state_by_id(JedlexCtx* ctx, uint32 search_id);
 
 void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode);
 
 void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte);
 void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range);
 
-void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max);
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, bool is_accepting);
 
 
 /*
@@ -649,7 +645,7 @@ void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreM
     ctx->fsm.state_count = 0;
 }
 
-void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max){
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, bool is_accepting){
     if(state == NULL) return;
     // if(state->transition_count <= 0) return;
     
@@ -660,8 +656,9 @@ void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max){
         }
         ctx->fsm.states[state->id] = state;
         ctx->fsm.state_count++;
+        state->is_accepting = is_accepting;
+        
         state->tr_capacity = transition_max;
-
         state->tr_offset = ctx->fsm.tr_reserved;
         ctx->fsm.tr_reserved += transition_max;
         return;
@@ -669,42 +666,47 @@ void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max){
     TODO("handle error: state id has invalid range");
 }
 
-FSMState* get_state_by_id(FSMState** states, uint32 search_id){
-    TODO("Some check / fallback if no state match ? ");
-    return states[search_id];
+FSMState* get_state_by_id(JedlexCtx* ctx, uint32 search_id){
+    if(search_id < 0 || search_id >= ctx->fsm.state_count) return NULL;
+    return ctx->fsm.states[search_id];
 }
 
 bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
     uint8 current_byte;
+    bool tfound;
     token->end = 0;
     token->start = 0;
 
     while (ctx->in_buffer_offset < ctx->inbuffer_size) {
         current_byte = peek_byte(ctx, 0);
-        FSMState* s = get_state_by_id(ctx->fsm.states, ctx->current_state);
-        bool t_found = 0;
+        FSMState* s = get_state_by_id(ctx, ctx->current_state);
+        tfound = 0;
         for (uint32 i = s->tr_offset; i < s->tr_offset + s->tr_count; i++) {
             if(current_byte >= ctx->fsm.transitions[i].lower && current_byte <= ctx->fsm.transitions[i].higher){
-                t_found = 1;
-                FSMState* next = get_state_by_id(ctx->fsm.states, ctx->fsm.transitions[i].to_id);
-                if(next == NULL) {
-                    ctx->current_state = s->fallback_id;
-                }else{
-                    if(next->action == JEDACT_ERROR)    return 0;
-                    add_current_byte_to_token(ctx, token);
-                    ctx->current_state = next->id;
-                    if(next->action == JEDACT_CONTINUE) break;
-
-                    return 1;
+                tfound = 1;
+                FSMState* next = get_state_by_id(ctx, ctx->fsm.transitions[i].to_id);
+                if(next == NULL){
+                    FATAL_TODO("Error: Target id of the transition is invalid !");
                 }
+                ctx->current_state = next->id;
+                add_current_byte_to_token(ctx, token);
                 break;
             }
         }
-        if(t_found == 0){
-            // no transition found for current state and char, fallback 
-            // and emit current token
-            ctx->current_state = s->fallback_id;
-            return token->end != token->start;
+        
+        if(!tfound){
+            //valid state, reset to start, emit token
+            // reset to start? or user choice? or fallback? 
+            if(s->is_accepting && token->end - token->start > 0 ) {
+                ctx->current_state = 0;
+                return 1;
+            }
+            //invalid state, error should not end here
+            else {
+                TODO("Error: No valid transition found in a non accepting state or token length didn't move!");
+                ctx->current_state = ctx->fallback_id;
+                return 0;
+            }
         }
         ctx->in_buffer_offset++;
     }
@@ -712,3 +714,16 @@ bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
 }
 
 #endif
+
+
+//roadmap:
+/*
+    - replace is_accepting bool to token_kind, null if non accept
+    - handle keywords 
+    - handle string literals
+    - enhenced error reporting on invalid char, print error and skip char
+    - handle token accumulation that isn't a continuous range
+    - clean merge fsm struct into jedlexctx
+    - remove most runtime dispatch(coremods) into prepro compil time
+
+*/
