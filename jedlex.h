@@ -89,6 +89,7 @@ typedef int(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
 typedef struct{
     uint8 lower, higher;
     uint32 to_id;
+    bool ignore_byte;
 } FSMTransition;
 
 typedef struct{
@@ -610,8 +611,8 @@ FSMState* get_state_by_id(JedlexCtx* ctx, uint32 search_id);
 
 void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode);
 
-void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte);
-void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range);
+void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte, bool ignore_byte);
+void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range, bool ignore_byte);
 
 void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, int32 token_kind_on_accept);
 
@@ -620,15 +621,15 @@ void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, in
     Transitions are range based,
     so range a-z count as 1 transition not 26
 */
-void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte){
+void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte, bool ignore_byte){
     
-    jedlex_add_single_range_transition(ctx, from, to, on_byte, on_byte);
+    jedlex_add_single_range_transition(ctx, from, to, on_byte, on_byte, ignore_byte);
 }
 /*
     Transitions are range based,
     so range a-z count as 1 transition not 26
 */
-void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_byte){
+void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_byte, bool ignore_byte){
     uint64 offset = from->tr_offset + from->tr_count;
     if(from->tr_count + 1 >= from->tr_capacity) {
         FATAL_TODO("Error: Transition do not fit in state");
@@ -637,7 +638,7 @@ void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState
         FATAL_TODO("Error: Transition range out of array bounds");
     }
     
-    ctx->fsm.transitions[from->tr_offset + from->tr_count++] = (FSMTransition) {lower_byte, higher_byte, to->id};
+    ctx->fsm.transitions[from->tr_offset + from->tr_count++] = (FSMTransition) {lower_byte, higher_byte, to->id, ignore_byte};
 }
 
 void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode){
@@ -691,7 +692,9 @@ bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
                     FATAL_TODO("Error: Target id of the transition is invalid !");
                 }
                 ctx->current_state = next->id;
-                add_current_byte_to_token(ctx, token);
+                if(!ctx->fsm.transitions[i].ignore_byte){
+                    add_current_byte_to_token(ctx, token);
+                }
                 break;
             }
         }
@@ -721,12 +724,11 @@ bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
 
 //roadmap:
 /*
-    - replace token_kind_on_accept bool to token_kind, null if non accept
-    - handle keywords 
-    - handle string literals
-    - enhenced error reporting on invalid char, print error and skip char
-    - handle token accumulation that isn't a continuous range
-    - clean merge fsm struct into jedlexctx
-    - remove most runtime dispatch(coremods) into prepro compil time
+- handle token accumulation that isn't a continuous range
+- handle string literals
+- handle keywords 
+- enhenced error reporting on invalid char, print error and skip char
+- clean merge fsm struct into jedlexctx
+- remove most runtime dispatch(coremods) into prepro compil time
 
 */

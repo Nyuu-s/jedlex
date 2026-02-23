@@ -9,7 +9,7 @@
 int main(){
 
     JedlexCtx ctx = {0};
-    uint8* input = (uint8*)"hello == _world 88 (0xFF)"; // mimic a fdopen + fread into char buffer
+    uint8* input = (uint8*)"[hello == _world 88 (0xFF)"; // mimic a fdopen + fread into char buffer
     JedLexToken token = {0};
     // jedlex_init_fsm(&ctx, input, sizeof(input), COREMODE_FSM_CLASSIC);
     printf("res: %d", (uint8)'z'-(uint8)'a');
@@ -21,8 +21,8 @@ int main(){
     jedlex_add_state(&ctx, &start, 10, -1);
     jedlex_add_state(&ctx, &ident, 10, TOKKIND_NUMBER);
 
-    jedlex_add_single_range_transition(&ctx, &start, &ident, 'a', 'z');
-    jedlex_add_single_range_transition(&ctx, &ident, &ident, 'a', 'z');
+    jedlex_add_single_transition(&ctx, &start, &ident, '[', 1);
+    jedlex_add_single_range_transition(&ctx, &ident, &ident, 'a', 'z', 0);
 
     while(get_next_token(&ctx, &token)){
         printf("Token: %.*s | %s \n", (int)(token.end - token.start)+1, token.start, token_kind_name(token.kind));
