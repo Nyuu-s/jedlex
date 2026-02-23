@@ -98,7 +98,7 @@ typedef struct{
     uint64 tr_capacity;
     uint32 fallback_id;
     uint32 id;
-    bool is_accepting;
+    int32 token_kind_on_accept;
 
 } FSMState;
 
@@ -613,7 +613,7 @@ void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreM
 void jedlex_add_single_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 on_byte);
 void jedlex_add_single_range_transition(JedlexCtx* ctx, FSMState* from, FSMState* to, uint8 lower_byte, uint8 higher_range);
 
-void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, bool is_accepting);
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, int32 token_kind_on_accept);
 
 
 /*
@@ -645,7 +645,9 @@ void jedlex_init_fsm(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreM
     ctx->fsm.state_count = 0;
 }
 
-void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, bool is_accepting){
+
+
+void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, int32 token_kind_on_accept){
     if(state == NULL) return;
     // if(state->transition_count <= 0) return;
     
@@ -656,7 +658,7 @@ void jedlex_add_state(JedlexCtx *ctx, FSMState* state, uint64 transition_max, bo
         }
         ctx->fsm.states[state->id] = state;
         ctx->fsm.state_count++;
-        state->is_accepting = is_accepting;
+        state->token_kind_on_accept = token_kind_on_accept;
         
         state->tr_capacity = transition_max;
         state->tr_offset = ctx->fsm.tr_reserved;
@@ -697,8 +699,9 @@ bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
         if(!tfound){
             //valid state, reset to start, emit token
             // reset to start? or user choice? or fallback? 
-            if(s->is_accepting && token->end - token->start > 0 ) {
+            if(s->token_kind_on_accept >= 0 && token->end - token->start > 0 ) {
                 ctx->current_state = 0;
+                token->kind = s->token_kind_on_accept;
                 return 1;
             }
             //invalid state, error should not end here
@@ -718,7 +721,7 @@ bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
 
 //roadmap:
 /*
-    - replace is_accepting bool to token_kind, null if non accept
+    - replace token_kind_on_accept bool to token_kind, null if non accept
     - handle keywords 
     - handle string literals
     - enhenced error reporting on invalid char, print error and skip char

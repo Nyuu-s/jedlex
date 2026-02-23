@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 int main(){
 
     JedlexCtx ctx = {0};
@@ -17,8 +18,8 @@ int main(){
     FSMState ident = {.id = 1};
 
     jedlex_init_fsm(&ctx, input, strlen((char*)input), COREMODE_FSM_CLASSIC);
-    jedlex_add_state(&ctx, &start, 10, 1);
-    jedlex_add_state(&ctx, &ident, 10, 1);
+    jedlex_add_state(&ctx, &start, 10, -1);
+    jedlex_add_state(&ctx, &ident, 10, TOKKIND_NUMBER);
 
     jedlex_add_single_range_transition(&ctx, &start, &ident, 'a', 'z');
     jedlex_add_single_range_transition(&ctx, &ident, &ident, 'a', 'z');
