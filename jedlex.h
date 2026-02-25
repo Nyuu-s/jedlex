@@ -23,6 +23,7 @@ typedef unsigned int jedlexInitFlags;
 #define JEDLEX_HANDLER_CONTINUE 0
 #define JEDLEX_HANDLER_ERROR -1
 
+#define FSM_MAX_TOKEN_LENGTH 256
 // CLASSIFIER API
 #define JEDLEX_CLS_REGISTER(ds) TODO("Register user datastructure as classifier")
 
@@ -81,6 +82,12 @@ typedef struct JedLexToken{
     uint32 kind;
 }  JedLexToken;
 
+typedef struct JedLexTokenFSM{
+    uint32 kind;
+    uint8 buffer[FSM_MAX_TOKEN_LENGTH];
+    uint32 size;
+}  JedLexTokenFSM;
+
 typedef struct JedlexCtx  JedlexCtx;
 typedef struct FSMCtx FSMCtx ;
 typedef int(*jedlexHandler)(JedlexCtx* ctx, JedLexToken* token, uint8 byte);
@@ -105,6 +112,7 @@ typedef struct{
 
 #define FSM_MAX_STATE 64
 #define FSM_MAX_TRANSITIONS 256
+#define FSM_MAX_TOKEN_LENGTH 256
 struct FSMCtx {
     FSMState* states[FSM_MAX_STATE];
     FSMTransition transitions[FSM_MAX_TRANSITIONS];
@@ -121,6 +129,7 @@ struct JedlexCtx {
 
     //get next token dispatcher
     bool (*func_next_token)(JedlexCtx* ctx, JedLexToken* token);
+    bool (*func_next_token_fsm)(JedlexCtx* ctx, JedLexTokenFSM* token);
 
     //switch zone
     uint32 current_state;
@@ -139,9 +148,10 @@ struct JedlexCtx {
 void jedlex_init_handlers(JedlexCtx *ctx, uint8 *input, uint64 buffer_size, EJedCoreMode core_mode);
 void jedlex_init(JedlexCtx* ctx, const uint8* input, uint64 buffer_size, EJedCoreMode core_mode);
 bool get_next_token(JedlexCtx* ctx, JedLexToken* token);
+bool get_next_token_fsm(JedlexCtx *ctx, JedLexTokenFSM* token);
 bool switch_get_next_token(JedlexCtx *ctx, JedLexToken* token);
 bool handlers_get_next_token(JedlexCtx *ctx, JedLexToken* token);
-bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token);
+bool fsm_get_next_token(JedlexCtx* ctx, JedLexTokenFSM* token);
 uint8 peek_byte(JedlexCtx* ctx, uint64 offset);
 uint8 get_byte(JedlexCtx* ctx, uint64 step);
 bool is_alphanum(int c);
@@ -151,6 +161,7 @@ bool is_alpha(int c);
 bool is_symbol(int c);
 bool is_whitespace(int c);
 void add_current_byte_to_token(JedlexCtx* ctx, JedLexToken* tok);
+void add_current_byte_to_tokenFSM(JedlexCtx* ctx, JedLexTokenFSM* tok);
 
 void jedlex_set_handlers_table(JedlexCtx* ctx, jedlexHandler* handlers ,uint64 handlers_amount, uint64 fallback_id);
 void jedlex_set_handler_for_state(JedlexCtx* ctx, uint32 state, jedlexHandler handler );
@@ -181,7 +192,7 @@ inline void jedlex_init(JedlexCtx* ctx, const uint8* in_buffer, uint64 buffer_si
             break;
         }
         case COREMODE_FSM_CLASSIC: {
-            ctx->func_next_token = fsm_get_next_token;
+            ctx->func_next_token_fsm = fsm_get_next_token;
             break;
         };
         case COREMODE_FSM_MINIMAL: FATAL_TODO("FSM minimal mode (row compression, 1D array & offsets)"); break;
@@ -203,12 +214,13 @@ const char *state_name(uint32 s) {
     }
 }
 const char *token_kind_name(EJedSwitchTokenKind s) {
-    switch (s) {
+    switch ((int)s) {
         case TOKKIND_IDENTIFIER:        return "IDENTIFIER";
         case TOKKIND_NUMBER:            return "NUMBER";
         case TOKKIND_SYMBOL:            return "SYMBOL";
         case TOKKIND_WHITESPACE:        return "WHITESPACE";
         case TOKKIND_UNKNOWN:           return "UNKNOWN";
+        case 99: return "STRING LITERAL";
         default:               return "?ERROR?";
     }
 }
@@ -217,6 +229,11 @@ inline bool get_next_token(JedlexCtx *ctx, JedLexToken* token){
     //dispatch to the get_next_token function depending on ctx init
    return ctx->func_next_token(ctx, token);
 }
+inline bool get_next_token_fsm(JedlexCtx *ctx, JedLexTokenFSM* token){
+    //dispatch to the get_next_token function depending on ctx init
+   return ctx->func_next_token_fsm(ctx, token);
+}
+
 
 inline uint8 get_byte(JedlexCtx* ctx, uint64 relative_offset){
     ctx->in_buffer_offset += relative_offset;
@@ -232,7 +249,23 @@ inline void add_current_byte_to_token(JedlexCtx* ctx, JedLexToken* tok){
     }
     tok->end++;
 }
-
+inline void add_current_byte_to_tokenFSM(JedlexCtx* ctx, JedLexTokenFSM* tok){
+    if(ctx->inbuffer_size < ctx->in_buffer_offset+1)
+        return;
+    if(tok->size >= FSM_MAX_TOKEN_LENGTH)
+        return;
+    // if(tok->start + tok->size + 1 == ctx->in_buffer + ctx->in_buffer_offset) {
+    //     if(tok->size <= 0 || tok->start == NULL){
+    //         //first time calling it on this token
+    //         tok->start  = (uint8*) &ctx->in_buffer[ctx->in_buffer_offset];
+    //         tok->size = 1;
+    //         return;
+    //     }
+    // }
+    // else {
+    // }
+    tok->buffer[tok->size++] = ctx->in_buffer[ctx->in_buffer_offset];
+}
 inline bool is_num(int c){
     return c >= '0' && c <= '9';
 }
@@ -674,12 +707,16 @@ FSMState* get_state_by_id(JedlexCtx* ctx, uint32 search_id){
     return ctx->fsm.states[search_id];
 }
 
-bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
+uint32 token_len(JedLexTokenFSM* token){
+    return token->size;
+}
+
+bool fsm_get_next_token(JedlexCtx* ctx, JedLexTokenFSM* token){
     uint8 current_byte;
     bool tfound;
-    token->end = 0;
-    token->start = 0;
-
+    token->size = 0;
+    // token->start = 0;
+    
     while (ctx->in_buffer_offset < ctx->inbuffer_size) {
         current_byte = peek_byte(ctx, 0);
         FSMState* s = get_state_by_id(ctx, ctx->current_state);
@@ -693,7 +730,7 @@ bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
                 }
                 ctx->current_state = next->id;
                 if(!ctx->fsm.transitions[i].ignore_byte){
-                    add_current_byte_to_token(ctx, token);
+                    add_current_byte_to_tokenFSM(ctx, token);
                 }
                 break;
             }
@@ -702,7 +739,7 @@ bool fsm_get_next_token(JedlexCtx* ctx, JedLexToken* token){
         if(!tfound){
             //valid state, reset to start, emit token
             // reset to start? or user choice? or fallback? 
-            if(s->token_kind_on_accept >= 0 && token->end - token->start > 0 ) {
+            if(s->token_kind_on_accept >= 0 && token_len(token) > 0 ) {
                 ctx->current_state = 0;
                 token->kind = s->token_kind_on_accept;
                 return 1;
