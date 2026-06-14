@@ -2,8 +2,10 @@
 //TODO: define uint8
 #ifndef JEDLEX_H
 #define JEDLEX_H
-
+#include <stddef.h>
 // #### GLOBALS
+typedef unsigned char uint8;
+typedef unsigned int uint32;
 
 typedef enum {
   JED_READY,
@@ -14,7 +16,7 @@ typedef enum {
 
 typedef enum{
   JED_IDENTIFIER,
-  JED_PUNCTUATION
+  JED_PUNCTUATION,
 
   /*USER EXTENDABLE*/
   JED_TOKENKIND_COUNT
@@ -28,7 +30,7 @@ typedef struct {
   size_t line;
 } JLexer;
 
-typedef struct {
+typedef struct {
   uint8* start;
   size_t length;
   size_t col;
@@ -54,12 +56,12 @@ typedef struct {
   // uint8 length; just compute it from cp  
 } JCodePoint;
 
-JCodePoint decode_and_classify_uni(JLexer* lex);
+int decode_and_classify_uni(JLexer* lex, JCodePoint* cp);
 
 // #### codepoint classifier | merge directly in decoder, might change in the future
 // #### sequence classifier (fsm)
 void get_next_token();
-void get_state_from_cp(JcodePoint cp);
+void get_state_from_cp(JCodePoint cp);
 
 
 void init_lexer();
