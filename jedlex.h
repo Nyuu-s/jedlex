@@ -126,7 +126,7 @@ Elex_status utf8_decode(JLexer* lex, JCodePoint* cp){
   // 1111 0000 if 3 since 4 bit header 4 payload
   // 1111 1100 if 4 since 5 bit header 3 payload
   // using len * (len != 1) so shift by 7 when len=1 otherwise shift by 7-(2;4)
-  uint8 first_byte_mask = ~(0xFF << (7 - (len * (len != 1));
+  uint8 first_byte_mask = ~(0xFF << (7 - (len * (len != 1))));
 
 
   // 0000 0000 | (cur & fb_mask) << (6 * (1;4) 
