@@ -26,6 +26,7 @@
 // #### GLOBALS
 typedef unsigned char uint8;
 typedef unsigned int uint32;
+typedef unsigned long long uint64;
 
 typedef enum {
   JED_READY,
@@ -59,7 +60,18 @@ typedef struct {
   Etoken_kind kind;
 } JToken;
 
+
 typedef uint32 codepoint_t;
+typedef uint64 cp_category_t;
+
+//clamp values to 0-63
+#define CP_CAT(n) (((n) < 64 && (n) >= 0) ? ((cp_category_t)(1ULL << (n))) : ((cp_category_t)0))
+
+
+#define CP_CAT_UNKNOWN ((cp_category_t)0)
+#define CP_CAT_LETTER CP_CAT(0)
+#define CP_CAT_PUNCT CP_CAT(1)
+#define CP_CAT_EMOJI CP_CAT(2)
 
 // #### UNICODE DECODING
 typedef enum {  
@@ -75,9 +87,9 @@ typedef struct {
   codepoint_t value;
   Ecp_category category;
   // uint8 length; just compute it from cp  
-} JCodePoint;
+} JCodepoint;
 
-Elex_status utf8_decode(JLexer* lex, JCodePoint* cp);
+Elex_status utf8_decode(JLexer* lex, JCodepoint* cp);
 
 // #### codepoint classifier | merge directly in decoder, might change in the future
 // #### sequence classifier (fsm)
@@ -88,12 +100,12 @@ int get_cp_len(codepoint_t cp){
   else return -1;
 }
 
-Elex_status jlex_get_char(JLexer* lex, JCodePoint* cp){
+Elex_status jlex_get_char(JLexer* lex, JCodepoint* cp){
   LEX_DECODE(lex, cp);
   return lex->status;
 }
 
-Elex_status utf8_decode(JLexer* lex, JCodePoint* cp){
+Elex_status utf8_decode(JLexer* lex, JCodepoint* cp){
   if(lex->status != JED_READY) { lex->status = JED_ERROR; return lex->status;}
   
   uint8* cur = lex->buff + lex->b_offset;
@@ -125,8 +137,8 @@ Elex_status utf8_decode(JLexer* lex, JCodePoint* cp){
   // 1110 0000 if 2 since 3 bit header 5 payload
   // 1111 0000 if 3 since 4 bit header 4 payload
   // 1111 1100 if 4 since 5 bit header 3 payload
-  // using len * (len != 1) so shift by 7 when len=1 otherwise shift by 7-(2;4)
-  uint8 first_byte_mask = ~(0xFF << (7 - (len * (len != 1))));
+  // shift by 7-(2;4) as 1 is handle as ascii
+  uint8 first_byte_mask = ~(0xFF << (7 - len ));
 
 
   // 0000 0000 | (cur & fb_mask) << (6 * (1;4) 
@@ -144,8 +156,17 @@ Elex_status utf8_decode(JLexer* lex, JCodePoint* cp){
   return lex->status;
 
 }
+
+void cp_classify(JLexer* lexer, JCodepoint* cp){
+  // 1. ASCII → direct lookup table, compile time, always present | extract to classify_ascii standalone
+  // 2. builtin ranges → compiled in, covers Latin/CJK/emoji
+  // 3. user ranges → runtime pointer, searched after builtin
+  
+
+}
+
 void get_next_token();
-void get_state_from_cp(JCodePoint cp);
+void get_state_from_cp(JCodepoint cp);
 
 
 void init_lexer();
